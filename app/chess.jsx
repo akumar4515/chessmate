@@ -167,7 +167,7 @@ export default function ChessApp() {
 
   const handleExit = () => {
     resetGame();
-    navigation.navigate('homePage');
+    navigation.navigate('index');
     setGameOverModalVisible(false);
   };
 

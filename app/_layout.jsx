@@ -7,7 +7,6 @@ export default function RootLayout() {
         headerShown: false, // Hides the header for all screens
       }}
     >
-      <Stack.Screen name="homePage" />
       <Stack.Screen name="index" />
       <Stack.Screen name="chess" />
       <Stack.Screen name="chessAi" />
