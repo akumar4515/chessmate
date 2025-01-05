@@ -6,7 +6,7 @@ import { useRoute } from '@react-navigation/native';
 import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
-const backgroundImage = require('../assets/images/background.png');
+const backgroundImage = require('../assets/images/home/hbg.png');
 
 const pieceImages = {
   'r': require('../assets/images/pieces/black-rook.png'),
@@ -325,15 +325,9 @@ export default function ChessApp() {
   return (
     <ImageBackground source={backgroundImage} style={styles.backgroundImage}>
     <View style={styles.container}>
-   
-      <Image
-            source={require("../assets/images/home/chessmate.png")}
-            style={styles.chessmateImg}
-          />
-
       <View style={styles.action}>
         <TouchableOpacity onPress={() => toggleSidebar()}>
-          <Image source={require('../assets/images/home/setting.png')} style={styles.userImg} />
+          <Image source={require('../assets/images/home/setting.png')} style={styles.setting} />
         </TouchableOpacity>
       </View>
 
@@ -460,9 +454,9 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
     height: "100%",
-    margin: 0,
+    marginTop: 70,
     padding: 0,
-    justifyContent: "center",
+    // justifyContent: "center",
     alignItems: "center",
     objectFit: "cover"
   },
@@ -470,6 +464,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     marginTop: 20,
+
+  },
+  setting:{
+    height: width * 0.12,
+    width: width * 0.12,
 
   },
   chessmateImg: {
@@ -559,8 +558,8 @@ flex:0,
 
   },
   chessboardContainer: {
-    borderWidth: 10,
-    borderColor: '#5D3FD3',
+    borderWidth: 3,
+    borderColor: '#457b',
     width: "100%"
   },
   row: {
@@ -580,13 +579,13 @@ flex:0,
     height: width * 0.12,
     width: width * 0.12,
     borderWidth: 2,
-    borderColor: 'white',
+    borderColor:"#14213d",
     borderRadius: width * 0.06,
     resizeMode: 'contain',
   },
   square: {
-    width: width * 0.12,
-    height: width * 0.12,
+    width: width * 0.124,
+    height: width * 0.135,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -624,8 +623,8 @@ flex:0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#5D3FD3',
-    borderColor:"white",
+    backgroundColor: '#f1faee',
+    borderColor:"#8d99ae",
     borderWidth:3,
     paddingHorizontal: width * 0.05,
   },

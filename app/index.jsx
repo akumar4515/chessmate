@@ -3,6 +3,14 @@ import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions
 import { useNavigation } from '@react-navigation/native';
 const { width, height } = Dimensions.get('window');
 import User from './User.jsx';
+const user = {
+  username: 'ChessMaster123',
+  profilePicture: require('../assets/images/home/blitz.png'),
+  ranking: '1500',
+  gamesPlayed: '120',
+  gamesWon: '85',
+  gamesLost: '35',
+};
 
 export default function ChessMateHome() {
   const [selectedMode, setSelectedMode] = useState("classic"); // State to track the selected mode
@@ -162,7 +170,7 @@ export default function ChessMateHome() {
         </ImageBackground>
     ): page === "user" ? (
       <View>
- <User/>
+ <User user={user}/>
       </View>
     ) : null}
         {/* Footer */}

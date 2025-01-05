@@ -6,7 +6,7 @@ import { useRoute } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import { Audio } from 'expo-av';
 const { width, height } = Dimensions.get('window');
-const backgroundImage = require('../assets/images/background.png');
+const backgroundImage = require('../assets/images/home/hbg.png');
 
 const pieceImages = {
   'r': require('../assets/images/pieces/black-rook.png'),
@@ -276,11 +276,6 @@ export default function ChessApp() {
   return (
     <ImageBackground source={backgroundImage} style={styles.backgroundImage}>
     <View style={styles.container}>
-   
-      <Image
-            source={require("../assets/images/home/chessmate.png")}
-            style={styles.chessmateImg}
-          />
 
       <View style={styles.action}>
         <View style={styles.levelSelector}>
@@ -296,7 +291,7 @@ export default function ChessApp() {
           </Picker>
         </View>
         <TouchableOpacity onPress={() => toggleSidebar()}>
-          <Image source={require('../assets/images/home/setting.png')} style={styles.userImg} />
+          <Image source={require('../assets/images/home/setting.png')} style={styles.setting} />
         </TouchableOpacity>
       </View>
 
@@ -414,9 +409,9 @@ const styles = StyleSheet.create({
     flex: 1,
     width:"100%",
     height:"100%",
-    margin: 0,
+    marginTop:25,
     padding: 0,
-    justifyContent: "center",
+    // justifyContent: "center",
     alignItems: "center",
     objectFit:"cover"
   },
@@ -439,6 +434,11 @@ const styles = StyleSheet.create({
     top:width*0.24,
     left:width*0.48,
     shadowColor: '#000',
+  },
+  setting:{
+    height: width * 0.12,
+    width: width * 0.12,
+
   },
   closeButton:{
     width:"100%",
@@ -485,8 +485,8 @@ const styles = StyleSheet.create({
     color: 'black',
   },
   chessboardContainer: {
-    borderWidth: 10,
-    borderColor: '#5D3FD3',
+    borderWidth: 3,
+    borderColor: '#457b',
     width:"100%"
   },
   row: {
@@ -506,13 +506,13 @@ const styles = StyleSheet.create({
     height: width * 0.12,
     width: width * 0.12,
     borderWidth: 2,
-    borderColor: '#CCCCFF',
+    borderColor:"#14213d",
     borderRadius: width * 0.06,
     resizeMode: 'cover',
   },
   square: {
-    width: width * 0.12,
-    height: width * 0.12,
+    width: width * 0.124,
+    height: width * 0.130,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -528,6 +528,10 @@ const styles = StyleSheet.create({
   },
   validMoveSquare: {
     backgroundColor: '#90EE90',
+
+    borderColor:"transparent",
+    borderRadius:50,
+  
   },
   kingInCheckSquare: {
     backgroundColor: '#FF6347',
@@ -556,7 +560,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#6495ED',
+    backgroundColor: '#f1faee',
+  
+    borderColor:"#8d99ae",
+    borderWidth:3,
     paddingHorizontal: width * 0.05,
   },
   capturedPieces: {
