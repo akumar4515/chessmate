@@ -1,26 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Image, Modal, Dimensions, ImageBackground } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Image, Modal, Dimensions, ScrollView, BackHandler } from 'react-native';
 import { Chess } from 'chess.js';
-import { useNavigation } from '@react-navigation/native';
-import { useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import { Audio } from 'expo-av';
+
 const { width, height } = Dimensions.get('window');
-const backgroundImage = require('../assets/images/home/hbg.png');
+const squareSize = Math.min(width * 0.113, 45); // Responsive square size
 
 const pieceImages = {
   'r': require('../assets/images/pieces/black-rook.png'),
-  'n': require('../assets/images/pieces/black-night.png'),
+  'n': require('../assets/images/pieces/black-knight.png'),
   'b': require('../assets/images/pieces/black-bishop.png'),
   'q': require('../assets/images/pieces/black-queen.png'),
   'k': require('../assets/images/pieces/black-king.png'),
   'p': require('../assets/images/pieces/black-pawn.png'),
   'R': require('../assets/images/pieces/white-rook.png'),
-  'N': require('../assets/images/pieces/white-night.png'),
+  'N': require('../assets/images/pieces/white-knight.png'),
   'B': require('../assets/images/pieces/white-bishop.png'),
   'Q': require('../assets/images/pieces/white-queen.png'),
   'K': require('../assets/images/pieces/white-king.png'),
   'P': require('../assets/images/pieces/white-pawn.png'),
+};
+
+const greenDotImage = require('../assets/images/green-dot.png');
+
+const initialPieces = {
+  white: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'],
+  black: ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p', 'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
 };
 
 export default function ChessApp() {
@@ -32,8 +39,12 @@ export default function ChessApp() {
   const [gameOverModalVisible, setGameOverModalVisible] = useState(false);
   const [gameOverMessage, setGameOverMessage] = useState('');
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] });
+  const [whiteTimer, setWhiteTimer] = useState(0);
+  const [blackTimer, setBlackTimer] = useState(0);
   const [currentTurn, setCurrentTurn] = useState('w');
   const [kingInCheck, setKingInCheck] = useState(null);
+  const [isPlay, setIsPlay] = useState(true);
+  const [pauseName, setPauseName] = useState("Pause");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [level, setLevel] = useState('medium');
   const [moveSound, setMoveSound] = useState(null);
@@ -41,6 +52,11 @@ export default function ChessApp() {
   const [castleSound, setCastleSound] = useState(null);
   const [promoteSound, setPromoteSound] = useState(null);
   const [checkSound, setCheckSound] = useState(null);
+  const [selectedColor, setSelectedColor] = useState({ light: '#EDEDED', dark: '#8B5A5A' });
+  const [showMoves, setShowMoves] = useState(true);
+  const [isBoardFlipped, setIsBoardFlipped] = useState(false);
+  const [moveHistory, setMoveHistory] = useState([]);
+  const [exitModalVisible, setExitModalVisible] = useState(false);
 
   const navigation = useNavigation();
   const route = useRoute();
@@ -48,39 +64,93 @@ export default function ChessApp() {
 
   const board = chess.board();
   const validMoves = selectedSquare ? chess.moves({ square: selectedSquare, verbose: true }).map(move => move.to) : [];
+
   useEffect(() => {
     loadSounds();
     return () => unloadSounds();
   }, []);
 
   const loadSounds = async () => {
-    const [move, capture, castle, promote, check] = await Promise.all([
-      Audio.Sound.createAsync(require('../assets/sounds/move.mp3')),
-      Audio.Sound.createAsync(require('../assets/sounds/capture.mp3')),
-      Audio.Sound.createAsync(require('../assets/sounds/castle.mp3')),
-      Audio.Sound.createAsync(require('../assets/sounds/promote.mp3')),
-      Audio.Sound.createAsync(require('../assets/sounds/move-check.mp3')),
-    ]);
-    setMoveSound(move.sound);
-    setCaptureSound(capture.sound);
-    setCastleSound(castle.sound);
-    setPromoteSound(promote.sound);
-    setCheckSound(check.sound);
+    try {
+      const [move, capture, castle, promote, check] = await Promise.all([
+        Audio.Sound.createAsync(require('../assets/sounds/move.mp3')).catch(() => ({ sound: null })),
+        Audio.Sound.createAsync(require('../assets/sounds/capture.mp3')).catch(() => ({ sound: null })),
+        Audio.Sound.createAsync(require('../assets/sounds/castle.mp3')).catch(() => ({ sound: null })),
+        Audio.Sound.createAsync(require('../assets/sounds/promote.mp3')).catch(() => ({ sound: null })),
+        Audio.Sound.createAsync(require('../assets/sounds/move-check.mp3')).catch(() => ({ sound: null })),
+      ]);
+      setMoveSound(move.sound);
+      setCaptureSound(capture.sound);
+      setCastleSound(castle.sound);
+      setPromoteSound(promote.sound);
+      setCheckSound(check.sound);
+    } catch (error) {
+      console.error('Error loading sounds:', error);
+    }
   };
 
   const unloadSounds = async () => {
-    if (moveSound) await moveSound.unloadAsync();
-    if (captureSound) await captureSound.unloadAsync();
-    if (castleSound) await castleSound.unloadAsync();
-    if (promoteSound) await promoteSound.unloadAsync();
-    if (checkSound) await checkSound.unloadAsync();
+    await Promise.all([
+      moveSound?.unloadAsync(),
+      captureSound?.unloadAsync(),
+      castleSound?.unloadAsync(),
+      promoteSound?.unloadAsync(),
+      checkSound?.unloadAsync(),
+    ].filter(Boolean));
   };
 
   const playSound = async (sound) => {
     if (sound) {
-      await sound.replayAsync();
+      try {
+        await sound.replayAsync();
+      } catch (error) {
+        console.warn('Error playing sound:', error);
+      }
     }
   };
+
+  useEffect(() => {
+    let initialTime;
+    switch (mode) {
+      case 'classic': initialTime = 60; break;
+      case 'blitz': initialTime = 30; break;
+      case 'unlimited': initialTime = 999999; break;
+      case 'rush': initialTime = 20; break;
+      default: initialTime = 60;
+    }
+    setWhiteTimer(initialTime);
+    setBlackTimer(initialTime);
+  }, [mode]);
+
+  useEffect(() => {
+    let timer;
+    if (isPlay && !gameOverModalVisible && !promotionModalVisible && mode !== 'unlimited') {
+      timer = setInterval(() => {
+        if (currentTurn === 'w') {
+          setWhiteTimer(prev => {
+            if (prev <= 1) {
+              clearInterval(timer);
+              setGameOverMessage('Black wins! White ran out of time.');
+              setGameOverModalVisible(true);
+              return 0;
+            }
+            return prev - 1;
+          });
+        } else {
+          setBlackTimer(prev => {
+            if (prev <= 1) {
+              clearInterval(timer);
+              setGameOverMessage('White wins! Black ran out of time.');
+              setGameOverModalVisible(true);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [currentTurn, gameOverModalVisible, promotionModalVisible, isPlay, mode]);
 
   useEffect(() => {
     if (chess.inCheck()) {
@@ -93,10 +163,10 @@ export default function ChessApp() {
   }, [gameFEN]);
 
   useEffect(() => {
-    if (currentTurn === 'b' && !gameOverModalVisible) {
+    if (currentTurn === 'b' && !gameOverModalVisible && isPlay) {
       setTimeout(() => aiMove(level), 1500);
     }
-  }, [currentTurn, gameOverModalVisible, level]);
+  }, [currentTurn, gameOverModalVisible, level, isPlay]);
 
   const findKingPosition = () => {
     for (let rowIndex = 0; rowIndex < board.length; rowIndex++) {
@@ -115,10 +185,8 @@ export default function ChessApp() {
     if (moves.length > 0) {
       let bestMove;
       if (level === 'easy') {
-        // Random move for easy level
         bestMove = moves[Math.floor(Math.random() * moves.length)];
       } else if (level === 'medium') {
-        // Choose the move that captures the highest value piece
         bestMove = moves[0];
         let highestValue = 0;
         const pieceValues = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
@@ -132,7 +200,6 @@ export default function ChessApp() {
           }
         });
       } else if (level === 'hard') {
-        // Evaluate moves to choose the best move
         bestMove = moves.reduce((best, move) => {
           chess.move(move);
           const evaluation = evaluateBoard(chess);
@@ -140,149 +207,276 @@ export default function ChessApp() {
           return evaluation > best.evaluation ? { move, evaluation } : best;
         }, { move: moves[0], evaluation: -Infinity }).move;
       }
-      chess.move(bestMove);
-      playSound(bestMove.captured ? captureSound : moveSound);
-      setGameFEN(chess.fen());
-      setCurrentTurn(chess.turn());
+      const moveResult = chess.move(bestMove);
+      if (moveResult) {
+        setGameFEN(chess.fen());
+        setCurrentTurn(chess.turn());
+        const newCapturedPieces = calculateCapturedPieces();
+        setCapturedPieces(newCapturedPieces);
+        if (moveResult.captured) {
+          playSound(captureSound);
+        } else if (moveResult.flags.includes('k') || moveResult.flags.includes('q')) {
+          playSound(castleSound);
+        } else {
+          playSound(moveSound);
+        }
+        updateTimersAfterMove();
+        updateMoveHistory();
+        checkGameOver();
+      }
     }
   };
 
   const evaluateBoard = (chess) => {
+  const board = chess.board();
+  const pieceValues = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+  let evaluation = 0;
+  board.forEach(row => {
+    row.forEach(square => {
+      if (square) {
+        evaluation += (square.color === 'w' ? pieceValues[square.type.toLowerCase()] : -pieceValues[square.type.toLowerCase()]);
+      }
+    });
+  });
+  return evaluation;
+};
+
+  const calculateCapturedPieces = () => {
+    const currentPieces = { white: [], black: [] };
     const board = chess.board();
-    const pieceValues = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-    let evaluation = 0;
     board.forEach(row => {
       row.forEach(square => {
         if (square) {
-          evaluation += (square.color === 'w' ? 1 : -1) * pieceValues[square.type.toLowerCase()];
+          if (square.color === 'w') {
+            currentPieces.white.push(square.type.toUpperCase());
+          } else {
+            currentPieces.black.push(square.type);
+          }
         }
       });
     });
-    return evaluation;
+    return {
+      white: initialPieces.black.filter(piece => !currentPieces.black.includes(piece)),
+      black: initialPieces.white.filter(piece => !currentPieces.white.includes(piece)),
+    };
   };
 
   const handleExit = () => {
+    setExitModalVisible(true);
+  };
+
+  const handleConfirmExit = () => {
     resetGame();
-    navigation.navigate('index');
+    navigation.navigate('index'); // Updated to 'Home' for consistency
+    setExitModalVisible(false);
     setGameOverModalVisible(false);
   };
+
+  const handleCancelModal = () => {
+    setExitModalVisible(false);
+  };
+
+  useEffect(() => {
+    const backAction = () => {
+      if (!gameOverModalVisible && !promotionModalVisible && !exitModalVisible) {
+        setExitModalVisible(true);
+        return true;
+      }
+      return false;
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [gameOverModalVisible, promotionModalVisible, exitModalVisible]);
 
   const handleLevelChange = (selectedLevel) => {
     setLevel(selectedLevel);
   };
 
   const onSquarePress = (rowIndex, colIndex) => {
+    if (!isPlay || currentTurn !== 'w') return; // Restrict to player's turn
     const square = `${String.fromCharCode(97 + colIndex)}${8 - rowIndex}`;
-  
+    const piece = chess.get(square);
+
     if (selectedSquare) {
-      if (selectedSquare === square) {
+      if (square === selectedSquare) {
         setSelectedSquare(null);
         return;
       }
-  
+
       const possibleMoves = chess.moves({ square: selectedSquare, verbose: true });
       const move = possibleMoves.find(m => m.to === square);
-  
+
       if (move) {
         const moveResult = chess.move({ from: selectedSquare, to: square, promotion: 'q' });
-  
+
         if (moveResult) {
+          setGameFEN(chess.fen());
+          setCurrentTurn(chess.turn());
+          const newCapturedPieces = calculateCapturedPieces();
+          setCapturedPieces(newCapturedPieces);
           if (moveResult.captured) {
-            const newCapturedPieces = { ...capturedPieces };
-            newCapturedPieces[moveResult.color === 'b' ? 'white' : 'black'].push(moveResult.captured);
-            setCapturedPieces(newCapturedPieces);
             playSound(captureSound);
-          }
-           else if (moveResult.flags.includes('k')) {
-          playSound(castleSound);
+          } else if (moveResult.flags.includes('k') || moveResult.flags.includes('q')) {
+            playSound(castleSound);
+          } else if (moveResult.flags.includes('e')) {
+            playSound(captureSound);
           } else {
-          playSound(moveSound);
+            playSound(moveSound);
           }
-  
+
           if (moveResult.flags.includes('p')) {
             chess.undo();
             setPromotionMove({ from: selectedSquare, to: square });
             setPromotionModalVisible(true);
           } else {
-            setGameFEN(chess.fen());
-            setCurrentTurn(chess.turn());
-
-            if (chess.isCheckmate()) {
-              setGameOverMessage(`${chess.turn() === 'w' ? 'Black' : 'White'} wins!`);
-              setGameOverModalVisible(true);
-            } else if (chess.isDraw()) {
-              setGameOverMessage('The game is a draw!');
-              setGameOverModalVisible(true);
-            }
+            updateTimersAfterMove();
+            updateMoveHistory();
+            checkGameOver();
           }
         }
-      }
-  
-      setSelectedSquare(null);
-    } else {
-      const piece = chess.get(square);
-      if (piece && piece.color === chess.turn()) {
+        setSelectedSquare(null);
+      } else if (piece && piece.color === chess.turn()) {
         setSelectedSquare(square);
       }
+    } else if (piece && piece.color === chess.turn()) {
+      setSelectedSquare(square);
     }
   };
-  
 
   const handlePromotion = (promotionPiece) => {
     if (promotionMove) {
       const move = chess.move({ from: promotionMove.from, to: promotionMove.to, promotion: promotionPiece });
-      if (move.captured) {
-        const newCapturedPieces = { ...capturedPieces };
-        newCapturedPieces[move.color === 'w' ? 'white' : 'black'].push(move.captured);
-        setCapturedPieces(newCapturedPieces);
-        playSound(captureSound);
-      }
-      else {
-        playSound(promoteSound);
-      }
       setGameFEN(chess.fen());
       setCurrentTurn(chess.turn());
-
+      const newCapturedPieces = calculateCapturedPieces();
+      setCapturedPieces(newCapturedPieces);
+      if (move.captured) {
+        playSound(captureSound);
+      } else {
+        playSound(promoteSound);
+      }
+      updateTimersAfterMove();
+      updateMoveHistory();
       setPromotionMove(null);
       setPromotionModalVisible(false);
-      if (chess.isCheckmate()) {
-        setGameOverMessage(`${chess.turn() === 'w' ? 'Black' : 'White'} wins!`);
-        setGameOverModalVisible(true);
-      } else if (chess.isDraw()) {
-        setGameOverMessage('The game is a draw!');
-        setGameOverModalVisible(true);
-      }
+      checkGameOver();
     }
   };
 
   const handleRematch = () => {
     resetGame();
+    setPauseName("Pause");
     setGameOverModalVisible(false);
   };
 
-  function resetGame() {
+  const handleUndo = () => {
+    const historyLength = chess.history().length;
+    if (historyLength >= 2) {
+      chess.undo(); // Undo AI's move
+      chess.undo(); // Undo player's move
+    } else if (historyLength === 1) {
+      chess.undo(); // Undo player's move
+    }
+    setGameFEN(chess.fen());
+    setSelectedSquare(null);
+    setCurrentTurn(chess.turn());
+    const newCapturedPieces = calculateCapturedPieces();
+    setCapturedPieces(newCapturedPieces);
+    updateMoveHistory();
+    if (chess.inCheck()) {
+      setKingInCheck(findKingPosition());
+    } else {
+      setKingInCheck(null);
+    }
+    checkGameOver();
+  };
+
+  const resetGame = () => {
     chess.reset();
     setGameFEN(chess.fen());
     setSelectedSquare(null);
     setCapturedPieces({ white: [], black: [] });
+    let initialTime;
+    switch (mode) {
+      case 'classic': initialTime = 60; break;
+      case 'blitz': initialTime = 30; break;
+      case 'unlimited': initialTime = 999999; break;
+      case 'rush': initialTime = 20; break;
+      default: initialTime = 60;
+    }
+    setWhiteTimer(initialTime);
+    setBlackTimer(initialTime);
     setCurrentTurn('w');
     setKingInCheck(null);
+    setIsPlay(true);
+    setPauseName("Pause");
+    setMoveHistory([]);
   };
 
-  const toggleSidebar = () => {
-    setIsSidebarOpen(!isSidebarOpen);
+  const updateTimersAfterMove = () => {
+    if (mode === 'classic') {
+      setWhiteTimer(60);
+      setBlackTimer(60);
+    } else if (mode === 'rush') {
+      setWhiteTimer(20);
+      setBlackTimer(20);
+    } else if (mode === 'blitz') {
+      if (currentTurn === 'w') {
+        setBlackTimer(prev => Math.min(prev + 2, 30));
+      } else {
+        setWhiteTimer(prev => Math.min(prev + 2, 30));
+      }
+    } else if (mode === 'unlimited') {
+      // No timer update
+    }
   };
+
+  const checkGameOver = () => {
+    if (chess.isCheckmate()) {
+      setGameOverMessage(`${chess.turn() === 'w' ? 'Black' : 'White'} wins by checkmate!`);
+      setGameOverModalVisible(true);
+    } else if (chess.isStalemate()) {
+      setGameOverMessage('Draw by stalemate!');
+      setGameOverModalVisible(true);
+    } else if (chess.isInsufficientMaterial()) {
+      setGameOverMessage('Draw by insufficient material!');
+      setGameOverModalVisible(true);
+    } else if (chess.isThreefoldRepetition()) {
+      setGameOverMessage('Draw by threefold repetition!');
+      setGameOverModalVisible(true);
+    } else if (chess.isDraw()) {
+      setGameOverMessage('Draw by fifty-move rule!');
+      setGameOverModalVisible(true);
+    }
+  };
+
+  const updateMoveHistory = () => {
+    setMoveHistory(chess.history({ verbose: true }));
+  };
+
+  const handlePauseResume = () => {
+    const newIsPlay = !isPlay;
+    setIsPlay(newIsPlay);
+    setPauseName(newIsPlay ? "Resume" : "Pause");
+    setSelectedSquare(null);
+  };
+
+  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+  const toggleShowMoves = () => setShowMoves(prev => !prev);
+  const toggleBoardOrientation = () => setIsBoardFlipped(!isBoardFlipped);
+  const handleColorChange = (light, dark) => setSelectedColor({ light, dark });
+
+  const renderBoard = isBoardFlipped ? board.slice().reverse() : board;
 
   return (
-    <ImageBackground source={backgroundImage} style={styles.backgroundImage}>
     <View style={styles.container}>
-
       <View style={styles.action}>
         <View style={styles.levelSelector}>
           <Text style={styles.levelText}>AI Level:</Text>
           <Picker
             selectedValue={level}
-            onValueChange={(itemValue) => handleLevelChange(itemValue)}
+            onValueChange={handleLevelChange}
             style={pickerSelectStyles.inputAndroid}
           >
             <Picker.Item label="Easy" value="easy" />
@@ -290,7 +484,7 @@ export default function ChessApp() {
             <Picker.Item label="Hard" value="hard" />
           </Picker>
         </View>
-        <TouchableOpacity onPress={() => toggleSidebar()}>
+        <TouchableOpacity onPress={toggleSidebar}>
           <Image source={require('../assets/images/home/setting.png')} style={styles.setting} />
         </TouchableOpacity>
       </View>
@@ -300,49 +494,86 @@ export default function ChessApp() {
           <TouchableOpacity style={styles.closeButton} onPress={toggleSidebar}>
             <Text style={styles.closeButtonText}>X</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={() => handleExit()}>
-            <Text style={styles.buttonText}>Exit</Text>
+          <TouchableOpacity style={styles.button} onPress={handlePauseResume}>
+            <Text style={styles.buttonText}>{pauseName}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={() => resetGame()}>
+          <TouchableOpacity style={styles.button} onPress={handleUndo}>
+            <Text style={styles.buttonText}>Undo Move</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.button} onPress={toggleBoardOrientation}>
+            <Text style={styles.buttonText}>Flip Board</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.button} onPress={resetGame}>
             <Text style={styles.buttonText}>Restart</Text>
           </TouchableOpacity>
-       
+          <TouchableOpacity style={styles.button} onPress={handleExit}>
+            <Text style={styles.buttonText}>Exit</Text>
+          </TouchableOpacity>
+          <View style={styles.toggleContainer}>
+            <Text style={styles.toggleLabel}>Show Possible Moves</Text>
+            <TouchableOpacity
+              style={[styles.toggleSwitch, showMoves ? styles.toggleSwitchOn : styles.toggleSwitchOff]}
+              onPress={toggleShowMoves}
+            >
+              <View style={[styles.toggleKnob, showMoves ? styles.toggleKnobOn : styles.toggleKnobOff]} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.boardColor}>Board Color</Text>
+          <View style={styles.colorPalate}>
+            <TouchableOpacity style={styles.buttonColor1} onPress={() => handleColorChange('#FFFACD', '#8B4513')} />
+            <TouchableOpacity style={styles.buttonColor2} onPress={() => handleColorChange('#D3D3D3', '#A9A9A9')} />
+            <TouchableOpacity style={styles.buttonColor3} onPress={() => handleColorChange('#FAF0E6', '#5F9EA0')} />
+          </View>
+          <View style={styles.moveHistoryContainer}>
+            <Text style={styles.moveHistoryTitle}>Move History</Text>
+            <ScrollView style={styles.moveHistory}>
+              {moveHistory.map((move, index) => (
+                <Text key={index} style={styles.moveText}>
+                  {Math.floor(index / 2) + 1}. {move.san}
+                </Text>
+              ))}
+            </ScrollView>
+          </View>
         </View>
       )}
 
       <View style={styles.capturedContainer}>
         <View style={styles.user}>
           <Image source={require('../assets/images/pieces/black-rook.png')} style={styles.userImg} />
+          {mode !== 'unlimited' && <Text style={styles.timerText}>{blackTimer}s</Text>}
         </View>
         <View style={styles.capturedPieces}>
-        {capturedPieces.white.map((piece, index) => (
-  <Image key={index} source={pieceImages[piece.toUpperCase()]} style={styles.capturedPieceImage} />
-))}
-
-</View>
-
+          {capturedPieces.black.map((piece, index) => (
+            <Image key={index} source={pieceImages[piece]} style={styles.capturedPieceImage} />
+          ))}
+        </View>
       </View>
 
       <View style={styles.chessboardContainer}>
-        {board.map((row, rowIndex) => (
+        {renderBoard.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.row}>
             {row.map((square, colIndex) => {
-              const squareName = `${String.fromCharCode(97 + colIndex)}${8 - rowIndex}`;
+              const adjustedRow = isBoardFlipped ? 7 - rowIndex : rowIndex;
+              const adjustedCol = isBoardFlipped ? 7 - colIndex : colIndex;
+              const squareName = `${String.fromCharCode(97 + adjustedCol)}${8 - adjustedRow}`;
               return (
                 <TouchableOpacity
-                  key={`${rowIndex}-${colIndex}`}
+                  key={`${adjustedRow}-${adjustedCol}`}
                   style={[
                     styles.square,
-                    (rowIndex + colIndex) % 2 === 0 ? styles.lightSquare : styles.darkSquare,
-                    selectedSquare === squareName ? styles.selectedSquare : null,
-                    validMoves.includes(squareName) ? styles.validMoveSquare : null,
-                    kingInCheck === squareName ? styles.kingInCheckSquare : null,
+                    (adjustedRow + adjustedCol) % 2 === 0 ? { backgroundColor: selectedColor.light } : { backgroundColor: selectedColor.dark },
+                    selectedSquare === squareName && styles.selectedSquare,
+                    kingInCheck === squareName && styles.kingInCheckSquare,
+                    showMoves && validMoves.includes(squareName) && styles.validMoveSquare,
                   ]}
-                  onPress={() => onSquarePress(rowIndex, colIndex)}
+                  onPress={() => onSquarePress(adjustedRow, colIndex)}
                 >
-                  {square && square.type ? (
-                    <Image source={pieceImages[square.color === 'w' ? square.type.toUpperCase() : square.type.toLowerCase()]} style={styles.pieceImage} />
-                  ) : null}
+                  {showMoves && validMoves.includes(squareName) && (
+                    <Image source={greenDotImage} style={styles.validMoveDot} />
+                  )}
+                  {square && (
+                    <Image source={pieceImages[square.color === 'w' ? square.type.toUpperCase() : square.type]} style={styles.pieceImage} />
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -352,17 +583,18 @@ export default function ChessApp() {
 
       <View style={styles.capturedContainer}>
         <View style={styles.capturedPieces}>
-          {capturedPieces.black.map((piece, index) => (
-            <Image key={index} source={pieceImages[piece.toLowerCase()]} style={styles.capturedPieceImage} />
+          {capturedPieces.white.map((piece, index) => (
+            <Image key={index} source={pieceImages[piece]} style={styles.capturedPieceImage} />
           ))}
         </View>
         <View style={styles.user}>
           <Image source={require('../assets/images/pieces/white-rook.png')} style={styles.userImg} />
+          {mode !== 'unlimited' && <Text style={styles.timerText}>{whiteTimer}s</Text>}
         </View>
       </View>
 
       <Modal
-        transparent={true}
+        transparent
         animationType="slide"
         visible={promotionModalVisible}
         onRequestClose={() => setPromotionModalVisible(false)}
@@ -371,9 +603,9 @@ export default function ChessApp() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Choose a piece for promotion:</Text>
             <View style={styles.promotionOptions}>
-              {['q', 'r', 'b', 'n'].map((piece) => (
+              {['q', 'r', 'b', 'n'].map(piece => (
                 <TouchableOpacity key={piece} onPress={() => handlePromotion(piece)}>
-                  <Image source={pieceImages[piece]} style={styles.pieceImage} />
+                  <Image source={pieceImages[currentTurn === 'w' ? piece.toUpperCase() : piece]} style={styles.pieceImage} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -382,7 +614,7 @@ export default function ChessApp() {
       </Modal>
 
       <Modal
-        transparent={true}
+        transparent
         animationType="slide"
         visible={gameOverModalVisible}
         onRequestClose={() => setGameOverModalVisible(false)}
@@ -399,222 +631,370 @@ export default function ChessApp() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={exitModalVisible}
+        onRequestClose={() => setExitModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Do you want to leave?</Text>
+            <View style={styles.modalButtonContainer}>
+              <TouchableOpacity style={[styles.button, styles.confirmButton]} onPress={handleConfirmExit}>
+                <Text style={styles.buttonText}>Yes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancelModal}>
+                <Text style={styles.buttonText}>No</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
-    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    width:"100%",
-    height:"100%",
-    marginTop:25,
-    padding: 0,
-    // justifyContent: "center",
-    alignItems: "center",
-    objectFit:"cover"
-  },
-  backgroundImage: {
-    flex: 1,
     width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  
-  sidebar:{
-    flex:1,
-    justifyContent:"space-around",
-    alignItems:"center",
-    width:width*0.5,
-    position:"absolute",
-    zIndex:3,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    top:width*0.24,
-    left:width*0.48,
-    shadowColor: '#000',
-  },
-  setting:{
-    height: width * 0.12,
-    width: width * 0.12,
-
-  },
-  closeButton:{
-    width:"100%",
-    flex:1,
-    alignItems:"flex-end"
-  },
-  closeButtonText:{
-    width:30,
-    height:30,
-    color:"white",
-    backgroundColor:"red",
-    textAlign:"center",
-    textAlignVertical:"center"
-  },
-  nameTitle:{
-    flex: 1,
-    alignItems: "center",
-    marginTop: 20,
-
-  },
-  chessmateImg: {
-    width: 250,
-    height: 60,
-    resizeMode: "contain",
+    backgroundColor: '#0F0F0F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: height * 0.05,
+    paddingHorizontal: 10,
   },
   action: {
-    marginTop: height * 0.04,
+    position: 'absolute',
+    top: height * 0.03,
     width: '100%',
-    display: 'flex',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: height * 0.02,
-    padding: 5,
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    zIndex: 10,
+  },
+  setting: {
+    width: 36,
+    height: 36,
+    tintColor: '#EDEDED',
   },
   levelSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   levelText: {
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#EDEDED',
+    marginRight: 8,
+  },
+  sidebar: {
+    position: 'absolute',
+    top: height * 0.1,
+    right: 15,
+    width: Math.min(width * 0.55, 280),
+    maxHeight: height * 0.65,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 15,
+    padding: 15,
+    zIndex: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 10,
+  },
+  closeButton: {
+    alignSelf: 'flex-end',
+    padding: 5,
+  },
+  closeButtonText: {
+    color: '#B76E79',
+    fontSize: 18,
     fontWeight: 'bold',
-    marginRight: 10,
-    color: 'black',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  button: {
+    backgroundColor: '#B76E79',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 15,
+    marginVertical: 6,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  buttonText: {
+    color: '#EDEDED',
+    fontSize: 14,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginVertical: 8,
+    width: '100%',
+  },
+  toggleLabel: {
+    color: '#EDEDED',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  toggleSwitch: {
+    width: 48,
+    height: 26,
+    borderRadius: 13,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleSwitchOn: {
+    backgroundColor: '#B76E79',
+  },
+  toggleSwitchOff: {
+    backgroundColor: '#4A4A4A',
+  },
+  toggleKnob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#EDEDED',
+  },
+  toggleKnobOn: {
+    transform: [{ translateX: 20 }],
+  },
+  toggleKnobOff: {
+    transform: [{ translateX: 0 }],
+  },
+  boardColor: {
+    color: '#EDEDED',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginTop: 12,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  colorPalate: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 10,
+  },
+  buttonColor1: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#FFFACD',
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#B76E79',
+  },
+  buttonColor2: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#D3D3D3',
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#B76E79',
+  },
+  buttonColor3: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#FAF0E6',
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#B76E79',
   },
   chessboardContainer: {
-    borderWidth: 3,
-    borderColor: '#457b',
-    width:"100%"
+    backgroundColor: '#2A2A2A',
+    borderRadius: 10,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 8,
+    width: squareSize * 8 + 8,
+    alignSelf: 'center',
+    marginVertical: height * 0.02,
   },
   row: {
     flexDirection: 'row',
   },
-  user: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: width * 0.03,
-  },
-  timerText: {
-    fontSize: width * 0.05,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  userImg: {
-    height: width * 0.12,
-    width: width * 0.12,
-    borderWidth: 2,
-    borderColor:"#14213d",
-    borderRadius: width * 0.06,
-    resizeMode: 'cover',
-  },
   square: {
-    width: width * 0.124,
-    height: width * 0.130,
+    width: squareSize,
+    height: squareSize,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  lightSquare: {
-    backgroundColor: '#EEE',
-  },
-  darkSquare: {
-    backgroundColor: '#444',
+    borderRadius: 4,
   },
   selectedSquare: {
+    backgroundColor: 'rgba(122, 161, 142, 0.5)',
     borderWidth: 2,
-    borderColor: '#FFD700',
+    borderColor: 'rgba(0, 255, 85, 0.61)',
+    borderRadius: 4,
   },
   validMoveSquare: {
-    backgroundColor: '#90EE90',
-
-    borderColor:"transparent",
-    borderRadius:50,
-  
+    borderWidth: 2,
+    borderColor: '#00FF62',
+    borderRadius: 4,
+  },
+  validMoveDot: {
+    width: squareSize * 0.8,
+    height: squareSize * 0.8,
+    resizeMode: 'contain',
+    position: 'absolute',
+    zIndex: 1,
   },
   kingInCheckSquare: {
-    backgroundColor: '#FF6347',
+    backgroundColor: '#DC143C',
+    borderRadius: 4,
   },
   pieceImage: {
-    width: width * 0.12,
-    height: width * 0.12,
+    width: squareSize * 0.9,
+    height: squareSize * 0.9,
     resizeMode: 'contain',
-  },
-  button: {
-    width: 100,
-    marginTop: height * 0.01,
-    margin: width * 0.02,
-    padding: width * 0.02,
-    backgroundColor: '#AA4A44',
-    borderRadius: 5,
-  },
-  buttonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    textAlign: 'center',
+    zIndex: 2,
   },
   capturedContainer: {
-    width: '100%',
-    height: height * 0.12,
+    width: '95%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f1faee',
-  
-    borderColor:"#8d99ae",
-    borderWidth:3,
-    paddingHorizontal: width * 0.05,
+    backgroundColor: '#2A2A2A',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginVertical: height * 0.015,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   capturedPieces: {
-    width: '100%',
     flexDirection: 'row',
-    justifyContent: 'space-around',
     flexWrap: 'wrap',
-    maxWidth: '80%',
+    maxWidth: '60%',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
   },
   capturedPieceImage: {
-    width: width * 0.08,
-    height: width * 0.08,
+    width: squareSize * 0.5,
+    height: squareSize * 0.5,
     resizeMode: 'contain',
-    marginHorizontal: width * 0.02,
+    margin: 3,
+  },
+  user: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C1C1C',
+    padding: 6,
+    borderRadius: 10,
+    minWidth: 60, // Prevent layout shift
+  },
+  userImg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#B76E79',
+    marginRight: 6,
+  },
+  timerText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#EDEDED',
   },
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(15, 15, 15, 0.8)',
+    zIndex: 30,
   },
   modalContent: {
-    width: width * 0.8,
-    padding: height * 0.03,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.8,
-    shadowRadius: 2,
+    width: Math.min(width * 0.85, 300),
+    backgroundColor: '#2A2A2A',
+    borderRadius: 15,
+    padding: 16,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#EDEDED',
+    marginBottom: 16,
+    textAlign: 'center',
   },
   promotionOptions: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: height * 0.02,
+    width: '100%',
+    paddingHorizontal: 12,
+  },
+  moveHistoryContainer: {
+    marginTop: 16,
+    width: '100%',
+  },
+  moveHistoryTitle: {
+    color: '#EDEDED',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  moveHistory: {
+    maxHeight: height * 0.15,
+  },
+  moveText: {
+    color: '#EDEDED',
+    fontSize: 12,
+    marginVertical: 2,
+  },
+  confirmButton: {
+    backgroundColor: '#B76E79',
+    flex: 1,
+    marginRight: 8,
+  },
+  cancelButton: {
+    backgroundColor: '#4A4A4A',
+    flex: 1,
+  },
+  modalButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 12,
   },
 });
 
 const pickerSelectStyles = StyleSheet.create({
   inputAndroid: {
-    width: 130,
-    fontSize: 16,
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-    borderWidth: 0.5,
-    borderColor: 'purple',
-    borderRadius: 8,
-    color: 'black',
-    paddingRight: 0, // to ensure the text is never behind the icon
-    backgroundColor: 'white',
+    width: 100,
+    fontSize: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    color: '#EDEDED',
+    backgroundColor: '#1C1C1C',
+    borderWidth: 1,
+    borderColor: '#B76E79',
   },
 });

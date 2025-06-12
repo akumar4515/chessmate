@@ -6,6 +6,10 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
+    "platforms": ["ios", "android", "web"],
+    "authSession": {
+      "redirectUri": "https://auth.expo.io/@akumar2245/chessmate"
+    },
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/splash-main.png",

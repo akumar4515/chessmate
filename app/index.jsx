@@ -2,15 +2,7 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, ImageBackground } from "react-native";
 import { useNavigation } from '@react-navigation/native';
 const { width, height } = Dimensions.get('window');
-import User from './User.jsx';
-const user = {
-  username: 'ChessMaster123',
-  profilePicture: require('../assets/images/home/blitz.png'),
-  ranking: '1500',
-  gamesPlayed: '120',
-  gamesWon: '85',
-  gamesLost: '35',
-};
+
 
 export default function ChessMateHome() {
   const [selectedMode, setSelectedMode] = useState("classic"); // State to track the selected mode
@@ -31,7 +23,7 @@ export default function ChessMateHome() {
   return (
     <View style={{ flex: 1 }}>
     {page==="home"?(
-      <ImageBackground source={require("../assets/images/home/homebg.png")} style={styles.background}>
+     
       <ScrollView contentContainerStyle={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -88,24 +80,24 @@ export default function ChessMateHome() {
           <TouchableOpacity
             style={[
               styles.mode,
-              selectedMode === 'tempo' ? styles.selectedMode : null,
+              selectedMode === 'unlimited' ? styles.selectedMode : null,
             ]}
-            onPress={() => setSelectedMode('tempo')}
+            onPress={() => setSelectedMode('unlimited')}
           >
             <Image
-              source={require("../assets/images/home/tempo.png")}
+              source={require("../assets/images/home/unlimited.png")}
               style={styles.modeImage}
             />
           </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.mode,
-              selectedMode === 'blitz3m' ? styles.selectedMode : null,
+              selectedMode === 'rush' ? styles.selectedMode : null,
             ]}
-            onPress={() => setSelectedMode('blitz3m')}
+            onPress={() => setSelectedMode('rush')}
           >
             <Image
-              source={require("../assets/images/home/blitz3m.png")}
+              source={require("../assets/images/home/rush.png")}
               style={styles.modeImage}
             />
           </TouchableOpacity>
@@ -154,9 +146,9 @@ export default function ChessMateHome() {
               styles.option,
               selectedOption === 'playon' ? styles.selectedOption : null,
             ]}
-            // onPress={() => {
-            //   navigation.navigate("chessMulti", { id: 100 });
-            // }}
+            onPress={() => {
+              alert("Cooming Soon")
+            }}
           >
             <Image
               source={require("../assets/images/home/playon.png")}
@@ -166,8 +158,6 @@ export default function ChessMateHome() {
         </View>
         </ScrollView>
 
-
-        </ImageBackground>
     ): page === "user" ? (
       <View>
  <User user={user}/>
@@ -181,19 +171,19 @@ export default function ChessMateHome() {
               style={styles.footerIcon}
             />
           </TouchableOpacity>
-          <TouchableOpacity name="frnd" onPress={() => handlePage("frnd")}>
+          <TouchableOpacity name="frnd" onPress={() =>alert("Comming Soon")}>
             <Image
               source={require("../assets/images/home/frnd.png")}
               style={styles.footerIcon}
             />
           </TouchableOpacity>
-          <TouchableOpacity name="cart"  onPress={() => handlePage("cart")}>
+          <TouchableOpacity name="cart"  onPress={() =>alert("Comming Soon")}>
             <Image
               source={require("../assets/images/home/cart.png")}
               style={styles.footerIcon}
             />
           </TouchableOpacity>
-          <TouchableOpacity name="user" onPress={() => handlePage("user")}>
+          <TouchableOpacity name="auth" onPress={() => handlePage("auth")}>
             <Image
               source={require("../assets/images/home/user.png")}
               style={styles.footerIcon}
@@ -206,111 +196,144 @@ export default function ChessMateHome() {
 }
 
 const styles = StyleSheet.create({
-  background: {
-    flex: 1,
-    width: "100%",
-    height: "100%",
-  },
   container: {
-    padding: 20,
+    flex: 1,
+    backgroundColor: '#0F0F0F', // Deep black background
+    paddingHorizontal: 15,
+    paddingTop: 30,
+  },
+  scrollContainer: {
     alignItems: 'center',
-  },
-  icon: {
-    marginTop:height*0.02,
-    width: 40,
-    height: 40,
-  },
-  middle: {
-    alignItems: "center",
-    marginTop: 20,
-  },
-  chessmateImg: {
-    width: 250,
-    height: 60,
-    resizeMode: "contain",
-  },
-  letsplayImg: {
-    width: 170,
-    height: 60,
-    resizeMode: "contain",
+    paddingVertical: 20,
+    paddingBottom: 0, // Restored padding to prevent footer overlap
+    width: '100%',
+    minHeight: height, // Ensure ScrollView takes full height
   },
   header: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
     width: '100%',
-    marginTop:10,
-    marginBottom: 20,
+    paddingHorizontal: 0,
+    marginBottom: 15,
+  },
+  settingsIcon: {
+    padding: 12,
+    backgroundColor: '#2A2A2A', // Charcoal gray for settings button
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  icon: {
+    width: 30,
+    height: 30,
+    tintColor: '#EDEDED', // Soft pearl for settings icon
+  },
+  middle: {
+    alignItems: 'center',
+    marginBottom: 0,
+  },
+  chessmateImg: {
+    width: "100%",
+    height: 40,
+    resizeMode: 'contain',
+    marginBottom: 2,
+  },
+  letsplayImg: {
+    width: 150,
+    height: 45,
+    resizeMode: 'contain',
   },
   modesContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     width: '100%',
-    marginVertical: 20,
+    marginVertical: 0,
   },
   mode: {
-    alignItems: "center",
-    justifyContent: "flex-end",
-    padding: 5,
-    borderRadius: 10,
+    width: width * 0.45,
+    alignItems: 'center',
+    backgroundColor: '#2A2A2A', // Charcoal gray for mode buttons
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 6,
   },
   selectedMode: {
-    paddingBottom: 10,
     borderWidth: 2,
-    borderColor: "white",
+    borderColor: '#B76E79', // Rose gold for selected mode
+    backgroundColor: '#1C1C1C', // Slightly lighter black
+    transform: [{ scale: 1.03 }],
   },
   modeImage: {
-    width: width * 0.20,
-    height: width * 0.25,
-    resizeMode: "contain",
+    width: '100%',
+    height: 80,
+    resizeMode: 'contain',
   },
   chessmid: {
-    marginTop: 10,
-    width: "100%",
+    width: '100%',
+    alignItems: 'center',
+    marginVertical: 5,
   },
   chessmidImg: {
+    width: '100%',
     height: 100,
-    width: "100%",
-    resizeMode: "cover",
+    resizeMode: 'contain',
   },
   optionsContainer: {
-    marginTop: 10,
     width: '100%',
+    marginVertical: 0,
   },
   option: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#2A2B6F",
+    backgroundColor: '#2A2A2A', // Charcoal gray for options
     padding: 15,
-    shadowColor: "white",
-    shadowOpacity: 1,
-    elevation: 10,
+    borderRadius: 15,
     marginVertical: 10,
-    borderRadius: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 6,
   },
   selectedOption: {
     borderWidth: 2,
-    borderColor: "yellow",
+    borderColor: '#DC143C', // Crimson for selected option
+    backgroundColor: '#1C1C1C', // Slightly lighter black
   },
   optionImage: {
-    width: "90%",
-    height: 50,
-    resizeMode: "contain",
+    width: '80%',
+    height: 40,
+    resizeMode: 'contain',
   },
   footer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#2A2A2A', // Charcoal gray for footer
+    paddingVertical: 12,
     width: '100%',
-
-    // marginTop: 20,
-    backgroundColor:'#3E638F',
-  position:"absolute",
-  bottom:0
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 8,
   },
   footerIcon: {
-    width: 60,
-    height: 60,
-    resizeMode: "contain",
+    width: 48,
+    height: 48,
+    resizeMode: 'contain',
+    tintColor: '#EDEDED', // Soft pearl for footer icons
   },
 });
