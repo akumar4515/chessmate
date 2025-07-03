@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, ImageBackground } from "react-native";
 import { useNavigation } from '@react-navigation/native';
 const { width, height } = Dimensions.get('window');
-
+import AuthPage from './User.jsx';
 
 export default function ChessMateHome() {
   const [selectedMode, setSelectedMode] = useState("classic"); // State to track the selected mode
@@ -16,21 +16,18 @@ export default function ChessMateHome() {
 
   const handlePage = (name) => {
     setPage(name);
+    navigation(page);
     console.log(`Navigating to page: ${name}`); // Log the new page directly
   };
   
 
   return (
     <View style={{ flex: 1 }}>
-    {page==="home"?(
+ 
      
       <ScrollView contentContainerStyle={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          {/* <Image
-            source={require("../assets/images/home/setting.png")}
-            style={styles.icon}
-          /> */}
           <TouchableOpacity style={styles.settingsIcon}>
             <Image
               source={require("../assets/images/home/setting.png")}
@@ -157,39 +154,6 @@ export default function ChessMateHome() {
           </TouchableOpacity>
         </View>
         </ScrollView>
-
-    ): page === "user" ? (
-      <View>
- <User user={user}/>
-      </View>
-    ) : null}
-        {/* Footer */}
-        <View style={styles.footer}>
-          <TouchableOpacity name="home" onPress={() => handlePage("home")}>
-            <Image
-              source={require("../assets/images/home/home.png")}
-              style={styles.footerIcon}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity name="frnd" onPress={() =>alert("Comming Soon")}>
-            <Image
-              source={require("../assets/images/home/frnd.png")}
-              style={styles.footerIcon}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity name="cart"  onPress={() =>alert("Comming Soon")}>
-            <Image
-              source={require("../assets/images/home/cart.png")}
-              style={styles.footerIcon}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity name="auth" onPress={() => handlePage("auth")}>
-            <Image
-              source={require("../assets/images/home/user.png")}
-              style={styles.footerIcon}
-            />
-          </TouchableOpacity>
-        </View>
         </View>
     
  )
@@ -221,7 +185,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#2A2A2A', // Charcoal gray for settings button
     borderRadius: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 4,
@@ -229,7 +193,7 @@ const styles = StyleSheet.create({
   icon: {
     width: 30,
     height: 30,
-    tintColor: '#EDEDED', // Soft pearl for settings icon
+    // tintColor: '#EDEDED', // Soft pearl for settings icon
   },
   middle: {
     alignItems: 'center',

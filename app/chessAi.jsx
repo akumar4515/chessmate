@@ -472,6 +472,14 @@ export default function ChessApp() {
   return (
     <View style={styles.container}>
       <View style={styles.action}>
+      <TouchableOpacity
+  style={styles.undo}
+  onPress={handleUndo}
+  activeOpacity={0.7} // Adds a fade effect when pressed
+>
+  <Text style={styles.buttonText}>Undo Move</Text>
+</TouchableOpacity>
+
         <View style={styles.levelSelector}>
           <Text style={styles.levelText}>AI Level:</Text>
           <Picker
@@ -497,9 +505,7 @@ export default function ChessApp() {
           <TouchableOpacity style={styles.button} onPress={handlePauseResume}>
             <Text style={styles.buttonText}>{pauseName}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={handleUndo}>
-            <Text style={styles.buttonText}>Undo Move</Text>
-          </TouchableOpacity>
+         
           <TouchableOpacity style={styles.button} onPress={toggleBoardOrientation}>
             <Text style={styles.buttonText}>Flip Board</Text>
           </TouchableOpacity>
@@ -520,7 +526,7 @@ export default function ChessApp() {
           </View>
           <Text style={styles.boardColor}>Board Color</Text>
           <View style={styles.colorPalate}>
-            <TouchableOpacity style={styles.buttonColor1} onPress={() => handleColorChange('#FFFACD', '#8B4513')} />
+            <TouchableOpacity style={styles.buttonColor1} onPress={() => handleColorChange('#EDEDED','#8B5A5A')} />
             <TouchableOpacity style={styles.buttonColor2} onPress={() => handleColorChange('#D3D3D3', '#A9A9A9')} />
             <TouchableOpacity style={styles.buttonColor3} onPress={() => handleColorChange('#FAF0E6', '#5F9EA0')} />
           </View>
@@ -666,20 +672,11 @@ const styles = StyleSheet.create({
     paddingTop: height * 0.05,
     paddingHorizontal: 10,
   },
-  action: {
-    position: 'absolute',
-    top: height * 0.03,
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 15,
-    zIndex: 10,
-  },
+   action: {display:"flex",flexDirection:"row",justifyContent:"space-between",width:"100%",margin:0,position:"absolute",top:30,padding:10 },
   setting: {
     width: 36,
     height: 36,
-    tintColor: '#EDEDED',
+    // tintColor: '#EDEDED',
   },
   levelSelector: {
     flexDirection: 'row',
@@ -797,7 +794,7 @@ const styles = StyleSheet.create({
   buttonColor1: {
     width: 36,
     height: 36,
-    backgroundColor: '#FFFACD',
+    backgroundColor: '#8B5A5A',
     borderRadius: 18,
     borderWidth: 2,
     borderColor: '#B76E79',
@@ -805,7 +802,7 @@ const styles = StyleSheet.create({
   buttonColor2: {
     width: 36,
     height: 36,
-    backgroundColor: '#D3D3D3',
+    backgroundColor: '#A9A9A9',
     borderRadius: 18,
     borderWidth: 2,
     borderColor: '#B76E79',
@@ -813,7 +810,7 @@ const styles = StyleSheet.create({
   buttonColor3: {
     width: 36,
     height: 36,
-    backgroundColor: '#FAF0E6',
+    backgroundColor: '#5F9EA0',
     borderRadius: 18,
     borderWidth: 2,
     borderColor: '#B76E79',
@@ -884,6 +881,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
   },
+ undo: {
+  backgroundColor: '#2A2A2A', // Charcoal gray background
+  paddingVertical: 12,
+  paddingHorizontal: 20,
+  borderRadius: 12,
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginVertical: 10,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.3,
+  shadowRadius: 4,
+  elevation: 5,
+},
+buttonText: {
+  color: '#EDEDED', // Soft pearl text
+  fontSize: 16,
+  fontWeight: '600',
+}
+,
   capturedPieces: {
     flexDirection: 'row',
     flexWrap: 'wrap',

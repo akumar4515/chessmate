@@ -402,6 +402,14 @@ useEffect(() => {
   return (
     <View style={styles.container}>
       <View style={styles.action}>
+        <TouchableOpacity
+  style={styles.undo}
+  onPress={handleUndo}
+  activeOpacity={0.7} // Adds a fade effect when pressed
+>
+  <Text style={styles.buttonText}>Undo Move</Text>
+</TouchableOpacity>
+
         <TouchableOpacity onPress={toggleSidebar}>
           <Image source={require('../assets/images/home/setting.png')} style={styles.setting} />
         </TouchableOpacity>
@@ -415,9 +423,7 @@ useEffect(() => {
           <TouchableOpacity style={styles.button} onPress={handlePauseResume}>
             <Text style={styles.buttonText}>{pauseName}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={handleUndo}>
-            <Text style={styles.buttonText}>Undo Move</Text>
-          </TouchableOpacity>
+          
           <TouchableOpacity style={styles.button} onPress={toggleBoardOrientation}>
             <Text style={styles.buttonText}>Flip Board</Text>
           </TouchableOpacity>
@@ -438,7 +444,7 @@ useEffect(() => {
           </View>
           <Text style={styles.boardColor}>Board Color</Text>
           <View style={styles.colorPalate}>
-            <TouchableOpacity style={styles.buttonColor1} onPress={() => handleColorChange('#FFFACD', '#8B4513')} />
+            <TouchableOpacity style={styles.buttonColor1} onPress={() => handleColorChange(  '#EDEDED','#8B5A5A')} />
             <TouchableOpacity style={styles.buttonColor2} onPress={() => handleColorChange('#D3D3D3', '#A9A9A9')} />
             <TouchableOpacity style={styles.buttonColor3} onPress={() => handleColorChange('#FAF0E6', '#5F9EA0')} />
           </View>
@@ -564,12 +570,32 @@ useEffect(() => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F0F0F', alignItems: 'center', justifyContent: 'center', paddingTop: 40 },
-  action: { position: 'absolute', top: 20, right: 20, zIndex: 10 },
-  setting: { width: 40, height: 40, tintColor: '#EDEDED' },
+  action: {display:"flex",flexDirection:"row",justifyContent:"space-between",width:"100%",margin:0,position:"absolute",top:30,padding:10 },
+  setting: { width: 40, height: 40, },
   sidebar: {
     position: 'absolute', top: 80, right: 20, width: width * 0.6, backgroundColor: '#2A2A2A', borderRadius: 20, padding: 20, zIndex: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 6, elevation: 10,
   },
+ undo: {
+  backgroundColor: '#2A2A2A', // Charcoal gray background
+  paddingVertical: 12,
+  paddingHorizontal: 20,
+  borderRadius: 12,
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginVertical: 10,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.3,
+  shadowRadius: 4,
+  elevation: 5,
+},
+buttonText: {
+  color: '#EDEDED', // Soft pearl text
+  fontSize: 16,
+  fontWeight: '600',
+}
+,
   closeButton: { alignSelf: 'flex-end', padding: 10 },
   closeButtonText: { color: '#B76E79', fontSize: 20, fontWeight: 'bold', backgroundColor: 'white', borderRadius: 15, width: 30, height: 30, textAlign: 'center', lineHeight: 30 },
   button: { backgroundColor: '#B76E79', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 25, marginVertical: 10, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
@@ -584,9 +610,9 @@ const styles = StyleSheet.create({
   toggleKnobOff: { transform: [{ translateX: 0 }] },
   boardColor: { color: '#EDEDED', fontSize: 16, fontWeight: 'bold', marginTop: 15, marginBottom: 10, textAlign: 'center' },
   colorPalate: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 10 },
-  buttonColor1: { width: 40, height: 40, backgroundColor: '#FFFACD', borderRadius: 20, borderWidth: 2, borderColor: '#B76E79' },
-  buttonColor2: { width: 40, height: 40, backgroundColor: '#D3D3D3', borderRadius: 20, borderWidth: 2, borderColor: '#B76E79' },
-  buttonColor3: { width: 40, height: 40, backgroundColor: '#FAF0E6', borderRadius: 20, borderWidth: 2, borderColor: '#B76E79' },
+  buttonColor1: { width: 40, height: 40, backgroundColor: '#8B5A5A', borderRadius: 20, borderWidth: 2, borderColor: '#B76E79' },
+  buttonColor2: { width: 40, height: 40, backgroundColor: '#A9A9A9', borderRadius: 20, borderWidth: 2, borderColor: '#B76E79' },
+  buttonColor3: { width: 40, height: 40, backgroundColor: '#5F9EA0', borderRadius: 20, borderWidth: 2, borderColor: '#B76E79' },
   chessboardContainer: { backgroundColor: '#2A2A2A', borderRadius: 15, padding: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 8, width: width * 0.95 },
   row: { flexDirection: 'row' },
   square: { width: width * 0.118, height: width * 0.118, alignItems: 'center', justifyContent: 'center', borderRadius: 5 },

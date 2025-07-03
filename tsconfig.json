@@ -13,5 +13,5 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-, "app/chessapp.jsx", "app/chess.jsx", "app/_layout.jsx", "app/index.jsx", "app/signup.jsx"  ]
+, "app/chessapp.jsx", "app/chess.jsx", "app/_layout.js", "app/index.jsx", "app/signup.jsx"  ]
 }

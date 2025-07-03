@@ -1,5 +1,4 @@
-// app/introVideo.js
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Video } from 'expo-av';
 import { useRouter } from 'expo-router';
@@ -9,9 +8,11 @@ export default function IntroVideo() {
   const router = useRouter();
 
   useEffect(() => {
+    console.log("✅ introVideo screen mounted");
+
     const timeout = setTimeout(() => {
-      router.replace('/'); // navigate after video ends
-    }, 5000); // optional fallback in case video doesn't fire onEnd
+      router.replace('/');
+    }, 5000);
 
     return () => clearTimeout(timeout);
   }, []);
@@ -20,10 +21,11 @@ export default function IntroVideo() {
     <View style={styles.container}>
       <Video
         ref={video}
-        source={require('../assets/images/splash.mp4')} // Replace with your actual video
+        source={require('../assets/images/splash.mp4')}
         style={styles.video}
         resizeMode="cover"
         shouldPlay
+        isMuted={false}
         isLooping={false}
         onPlaybackStatusUpdate={(status) => {
           if (status.didJustFinish) {

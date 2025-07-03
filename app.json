@@ -1,15 +1,17 @@
 {
   "expo": {
-    "name": "chessmate",
+    "name": "Chessmate",
     "slug": "chessmate",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
-    "platforms": ["ios", "android", "web"],
-    "authSession": {
-      "redirectUri": "https://auth.expo.io/@akumar2245/chessmate"
-    },
+    "scheme": "chessmate",
+    "owner": "akumar2245",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/splash-main.png",
@@ -20,16 +22,16 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.akumar2245.chessmate",
+      "versionCode": 1,
       "adaptiveIcon": {
-       
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#ffffff"
-      },
-      "package": "com.akumar2245.chessmate"
+      }
     },
     "web": {
       "bundler": "metro",
       "output": "static"
-  
     },
     "plugins": [
       "expo-router"
@@ -44,6 +46,12 @@
       "eas": {
         "projectId": "6b8d0714-7c72-44bc-8bf4-c052e549b17b"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6b8d0714-7c72-44bc-8bf4-c052e549b17b"
     }
   }
 }
