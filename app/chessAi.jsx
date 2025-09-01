@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Image, Modal, Dimensions, ScrollView, BackHandler } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Image, Modal, Dimensions, ScrollView, BackHandler, SafeAreaView, StatusBar } from 'react-native';
 import { Chess } from 'chess.js';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
-const squareSize = Math.min(width * 0.113, 45); // Responsive square size
+const squareSize = Math.min(width * 0.113, 45);
 
+// Piece images for the board and captured pieces (UNCHANGED)
 const pieceImages = {
   'r': require('../assets/images/pieces/black-rook.png'),
   'n': require('../assets/images/pieces/black-knight.png'),
@@ -30,7 +33,7 @@ const initialPieces = {
   black: ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p', 'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
 };
 
-export default function ChessApp() {
+export default function ChessAiApp() {
   const [chess] = useState(new Chess());
   const [gameFEN, setGameFEN] = useState(chess.fen());
   const [selectedSquare, setSelectedSquare] = useState(null);
@@ -79,6 +82,7 @@ export default function ChessApp() {
         Audio.Sound.createAsync(require('../assets/sounds/promote.mp3')).catch(() => ({ sound: null })),
         Audio.Sound.createAsync(require('../assets/sounds/move-check.mp3')).catch(() => ({ sound: null })),
       ]);
+
       setMoveSound(move.sound);
       setCaptureSound(capture.sound);
       setCastleSound(castle.sound);
@@ -130,7 +134,7 @@ export default function ChessApp() {
           setWhiteTimer(prev => {
             if (prev <= 1) {
               clearInterval(timer);
-              setGameOverMessage('Black wins! White ran out of time.');
+              setGameOverMessage('AI wins! You ran out of time.');
               setGameOverModalVisible(true);
               return 0;
             }
@@ -140,7 +144,7 @@ export default function ChessApp() {
           setBlackTimer(prev => {
             if (prev <= 1) {
               clearInterval(timer);
-              setGameOverMessage('White wins! Black ran out of time.');
+              setGameOverMessage('You win! AI ran out of time.');
               setGameOverModalVisible(true);
               return 0;
             }
@@ -207,12 +211,14 @@ export default function ChessApp() {
           return evaluation > best.evaluation ? { move, evaluation } : best;
         }, { move: moves[0], evaluation: -Infinity }).move;
       }
+
       const moveResult = chess.move(bestMove);
       if (moveResult) {
         setGameFEN(chess.fen());
         setCurrentTurn(chess.turn());
         const newCapturedPieces = calculateCapturedPieces();
         setCapturedPieces(newCapturedPieces);
+        
         if (moveResult.captured) {
           playSound(captureSound);
         } else if (moveResult.flags.includes('k') || moveResult.flags.includes('q')) {
@@ -220,6 +226,7 @@ export default function ChessApp() {
         } else {
           playSound(moveSound);
         }
+
         updateTimersAfterMove();
         updateMoveHistory();
         checkGameOver();
@@ -228,22 +235,25 @@ export default function ChessApp() {
   };
 
   const evaluateBoard = (chess) => {
-  const board = chess.board();
-  const pieceValues = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-  let evaluation = 0;
-  board.forEach(row => {
-    row.forEach(square => {
-      if (square) {
-        evaluation += (square.color === 'w' ? pieceValues[square.type.toLowerCase()] : -pieceValues[square.type.toLowerCase()]);
-      }
+    const board = chess.board();
+    const pieceValues = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+    let evaluation = 0;
+
+    board.forEach(row => {
+      row.forEach(square => {
+        if (square) {
+          evaluation += (square.color === 'w' ? pieceValues[square.type.toLowerCase()] : -pieceValues[square.type.toLowerCase()]);
+        }
+      });
     });
-  });
-  return evaluation;
-};
+
+    return evaluation;
+  };
 
   const calculateCapturedPieces = () => {
     const currentPieces = { white: [], black: [] };
     const board = chess.board();
+
     board.forEach(row => {
       row.forEach(square => {
         if (square) {
@@ -255,6 +265,7 @@ export default function ChessApp() {
         }
       });
     });
+
     return {
       white: initialPieces.black.filter(piece => !currentPieces.black.includes(piece)),
       black: initialPieces.white.filter(piece => !currentPieces.white.includes(piece)),
@@ -267,7 +278,7 @@ export default function ChessApp() {
 
   const handleConfirmExit = () => {
     resetGame();
-    navigation.navigate('index'); // Updated to 'Home' for consistency
+    navigation.navigate('index');
     setExitModalVisible(false);
     setGameOverModalVisible(false);
   };
@@ -284,7 +295,6 @@ export default function ChessApp() {
       }
       return false;
     };
-
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
   }, [gameOverModalVisible, promotionModalVisible, exitModalVisible]);
@@ -294,7 +304,8 @@ export default function ChessApp() {
   };
 
   const onSquarePress = (rowIndex, colIndex) => {
-    if (!isPlay || currentTurn !== 'w') return; // Restrict to player's turn
+    if (!isPlay || currentTurn !== 'w') return;
+
     const square = `${String.fromCharCode(97 + colIndex)}${8 - rowIndex}`;
     const piece = chess.get(square);
 
@@ -306,15 +317,14 @@ export default function ChessApp() {
 
       const possibleMoves = chess.moves({ square: selectedSquare, verbose: true });
       const move = possibleMoves.find(m => m.to === square);
-
       if (move) {
         const moveResult = chess.move({ from: selectedSquare, to: square, promotion: 'q' });
-
         if (moveResult) {
           setGameFEN(chess.fen());
           setCurrentTurn(chess.turn());
           const newCapturedPieces = calculateCapturedPieces();
           setCapturedPieces(newCapturedPieces);
+
           if (moveResult.captured) {
             playSound(captureSound);
           } else if (moveResult.flags.includes('k') || moveResult.flags.includes('q')) {
@@ -334,8 +344,8 @@ export default function ChessApp() {
             updateMoveHistory();
             checkGameOver();
           }
+          setSelectedSquare(null);
         }
-        setSelectedSquare(null);
       } else if (piece && piece.color === chess.turn()) {
         setSelectedSquare(square);
       }
@@ -351,11 +361,13 @@ export default function ChessApp() {
       setCurrentTurn(chess.turn());
       const newCapturedPieces = calculateCapturedPieces();
       setCapturedPieces(newCapturedPieces);
+
       if (move.captured) {
         playSound(captureSound);
       } else {
         playSound(promoteSound);
       }
+
       updateTimersAfterMove();
       updateMoveHistory();
       setPromotionMove(null);
@@ -373,17 +385,19 @@ export default function ChessApp() {
   const handleUndo = () => {
     const historyLength = chess.history().length;
     if (historyLength >= 2) {
-      chess.undo(); // Undo AI's move
-      chess.undo(); // Undo player's move
+      chess.undo();
+      chess.undo();
     } else if (historyLength === 1) {
-      chess.undo(); // Undo player's move
+      chess.undo();
     }
+
     setGameFEN(chess.fen());
     setSelectedSquare(null);
     setCurrentTurn(chess.turn());
     const newCapturedPieces = calculateCapturedPieces();
     setCapturedPieces(newCapturedPieces);
     updateMoveHistory();
+    
     if (chess.inCheck()) {
       setKingInCheck(findKingPosition());
     } else {
@@ -397,6 +411,7 @@ export default function ChessApp() {
     setGameFEN(chess.fen());
     setSelectedSquare(null);
     setCapturedPieces({ white: [], black: [] });
+    
     let initialTime;
     switch (mode) {
       case 'classic': initialTime = 60; break;
@@ -427,14 +442,12 @@ export default function ChessApp() {
       } else {
         setWhiteTimer(prev => Math.min(prev + 2, 30));
       }
-    } else if (mode === 'unlimited') {
-      // No timer update
     }
   };
 
   const checkGameOver = () => {
     if (chess.isCheckmate()) {
-      setGameOverMessage(`${chess.turn() === 'w' ? 'Black' : 'White'} wins by checkmate!`);
+      setGameOverMessage(`${chess.turn() === 'w' ? 'AI' : 'You'} wins by checkmate!`);
       setGameOverModalVisible(true);
     } else if (chess.isStalemate()) {
       setGameOverMessage('Draw by stalemate!');
@@ -458,7 +471,7 @@ export default function ChessApp() {
   const handlePauseResume = () => {
     const newIsPlay = !isPlay;
     setIsPlay(newIsPlay);
-    setPauseName(newIsPlay ? "Resume" : "Pause");
+    setPauseName(newIsPlay ? "Pause" : "Resume");
     setSelectedSquare(null);
   };
 
@@ -469,149 +482,301 @@ export default function ChessApp() {
 
   const renderBoard = isBoardFlipped ? board.slice().reverse() : board;
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.action}>
-      <TouchableOpacity
-  style={styles.undo}
-  onPress={handleUndo}
-  activeOpacity={0.7} // Adds a fade effect when pressed
->
-  <Text style={styles.buttonText}>Undo Move</Text>
-</TouchableOpacity>
+  const formatTime = (seconds) => {
+    if (mode === 'unlimited') return '∞';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
-        <View style={styles.levelSelector}>
-          <Text style={styles.levelText}>AI Level:</Text>
-          <Picker
-            selectedValue={level}
-            onValueChange={handleLevelChange}
-            style={pickerSelectStyles.inputAndroid}
-          >
-            <Picker.Item label="Easy" value="easy" />
-            <Picker.Item label="Medium" value="medium" />
-            <Picker.Item label="Hard" value="hard" />
-          </Picker>
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      
+      {/* Minimalistic Header */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+        
+        <View style={styles.headerCenter}>
+          <Text style={styles.gameMode}>{mode.toUpperCase()}</Text>
+          <Text style={styles.gameModeSubtext}>vs AI ({level})</Text>
         </View>
-        <TouchableOpacity onPress={toggleSidebar}>
-          <Image source={require('../assets/images/home/setting.png')} style={styles.setting} />
+
+        <TouchableOpacity onPress={toggleSidebar} style={styles.headerButton}>
+          <Ionicons name="settings" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
-      {isSidebarOpen && (
-        <View style={styles.sidebar}>
-          <TouchableOpacity style={styles.closeButton} onPress={toggleSidebar}>
-            <Text style={styles.closeButtonText}>X</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={handlePauseResume}>
-            <Text style={styles.buttonText}>{pauseName}</Text>
-          </TouchableOpacity>
-         
-          <TouchableOpacity style={styles.button} onPress={toggleBoardOrientation}>
-            <Text style={styles.buttonText}>Flip Board</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={resetGame}>
-            <Text style={styles.buttonText}>Restart</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={handleExit}>
-            <Text style={styles.buttonText}>Exit</Text>
-          </TouchableOpacity>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Show Possible Moves</Text>
-            <TouchableOpacity
-              style={[styles.toggleSwitch, showMoves ? styles.toggleSwitchOn : styles.toggleSwitchOff]}
-              onPress={toggleShowMoves}
-            >
-              <View style={[styles.toggleKnob, showMoves ? styles.toggleKnobOn : styles.toggleKnobOff]} />
-            </TouchableOpacity>
+      {/* Player Section - AI */}
+      <View style={styles.playerSection}>
+        <View style={styles.playerCard}>
+          <View style={styles.playerInfo}>
+            <View style={styles.playerAvatar}>
+              <Ionicons name="hardware-chip" size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.playerDetails}>
+              <Text style={styles.playerName}>AI</Text>
+              <Text style={styles.statusText}>
+                {currentTurn === 'b' ? 'Thinking...' : 'Waiting'}
+              </Text>
+            </View>
           </View>
-          <Text style={styles.boardColor}>Board Color</Text>
-          <View style={styles.colorPalate}>
-            <TouchableOpacity style={styles.buttonColor1} onPress={() => handleColorChange('#EDEDED','#8B5A5A')} />
-            <TouchableOpacity style={styles.buttonColor2} onPress={() => handleColorChange('#D3D3D3', '#A9A9A9')} />
-            <TouchableOpacity style={styles.buttonColor3} onPress={() => handleColorChange('#FAF0E6', '#5F9EA0')} />
-          </View>
-          <View style={styles.moveHistoryContainer}>
-            <Text style={styles.moveHistoryTitle}>Move History</Text>
-            <ScrollView style={styles.moveHistory}>
-              {moveHistory.map((move, index) => (
-                <Text key={index} style={styles.moveText}>
-                  {Math.floor(index / 2) + 1}. {move.san}
-                </Text>
-              ))}
-            </ScrollView>
-          </View>
+          {mode !== 'unlimited' && (
+            <View style={styles.timerContainer}>
+              <Text style={[styles.timerText, blackTimer <= 10 ? styles.urgentTimer : null]}>
+                {formatTime(blackTimer)}
+              </Text>
+            </View>
+          )}
         </View>
+
+        {/* Captured Pieces - Top */}
+        {/* <View style={styles.capturedSection}>
+          <Text style={styles.capturedLabel}>Captured by You</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.capturedScrollView}
+            contentContainerStyle={styles.capturedScrollContent}
+          >
+            {capturedPieces.black.map((piece, index) => (
+              <Image
+                key={index}
+                source={pieceImages[piece]}
+                style={styles.capturedPieceImage}
+              />
+            ))}
+            {capturedPieces.black.length === 0 && (
+              <Text style={styles.noCapturedText}>None</Text>
+            )}
+          </ScrollView>
+        </View> */}
+      </View>
+
+      {/* Chess Board - Minimalistic */}
+      <View style={styles.boardSection}>
+        <View style={styles.chessboardContainer}>
+          {renderBoard.map((row, rowIndex) => (
+            <View key={rowIndex} style={styles.row}>
+              {row.map((square, colIndex) => {
+                const adjustedRow = isBoardFlipped ? 7 - rowIndex : rowIndex;
+                const adjustedCol = isBoardFlipped ? 7 - colIndex : colIndex;
+                const squareName = `${String.fromCharCode(97 + adjustedCol)}${8 - adjustedRow}`;
+                const isSelected = selectedSquare === squareName;
+                const isValidMove = validMoves.includes(squareName);
+                const isKingInCheck = kingInCheck === squareName;
+
+                return (
+                  <TouchableOpacity
+                    key={`${rowIndex}-${colIndex}`}
+                    style={[
+                      styles.square,
+                      {
+                        backgroundColor: (adjustedRow + adjustedCol) % 2 === 0 
+                          ? selectedColor.light 
+                          : selectedColor.dark
+                      },
+                      isSelected && styles.selectedSquare,
+                      isValidMove && styles.validMoveSquare,
+                      isKingInCheck && styles.kingInCheckSquare,
+                    ]}
+                    onPress={() => onSquarePress(adjustedRow, colIndex)}
+                  >
+                    {showMoves && isValidMove && !square && (
+                      <View style={styles.validMoveDot} />
+                    )}
+                    {square && (
+                      <Image 
+                        source={pieceImages[square.color === 'w' ? square.type.toUpperCase() : square.type]} 
+                        style={styles.pieceImage} 
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Player Section - Human */}
+      <View style={styles.playerSection}>
+        {/* Captured Pieces - Bottom */}
+        {/* <View style={styles.capturedSection}>
+          <Text style={styles.capturedLabel}>Captured by AI</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.capturedScrollView}
+            contentContainerStyle={styles.capturedScrollContent}
+          >
+            {capturedPieces.white.map((piece, index) => (
+              <Image
+                key={index}
+                source={pieceImages[piece]}
+                style={styles.capturedPieceImage}
+              />
+            ))}
+            {capturedPieces.white.length === 0 && (
+              <Text style={styles.noCapturedText}>None</Text>
+            )}
+          </ScrollView>
+        </View> */}
+
+        <View style={styles.playerCard}>
+          <View style={styles.playerInfo}>
+            <View style={styles.playerAvatar}>
+              <Ionicons name="person" size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.playerDetails}>
+              <Text style={styles.playerName}>You</Text>
+              <Text style={styles.statusText}>
+                {currentTurn === 'w' ? 'Your Turn' : 'Waiting'}
+              </Text>
+            </View>
+          </View>
+          {mode !== 'unlimited' && (
+            <View style={styles.timerContainer}>
+              <Text style={[styles.timerText, whiteTimer <= 10 ? styles.urgentTimer : null]}>
+                {formatTime(whiteTimer)}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Control Panel */}
+      <View style={styles.controlPanel}>
+        <TouchableOpacity style={styles.undoButton} onPress={handleUndo}>
+          <Ionicons name="arrow-undo" size={18} color="#FFFFFF" />
+          <Text style={styles.undoButtonText}>Undo</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Minimalistic Sidebar */}
+      {isSidebarOpen && (
+        <>
+          <TouchableOpacity style={styles.overlay} onPress={toggleSidebar} />
+          <View style={styles.sidebar}>
+            <TouchableOpacity style={styles.closeButton} onPress={toggleSidebar}>
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            
+            <Text style={styles.sidebarTitle}>Settings</Text>
+
+            {/* AI Level Selection - Minimalistic */}
+            <View style={styles.levelSection}>
+              <Text style={styles.sectionTitle}>AI Difficulty</Text>
+              <View style={styles.levelSelectorContainer}>
+                <Ionicons name="hardware-chip" size={18} color="#FFFFFF" />
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={level}
+                    style={styles.picker}
+                    onValueChange={handleLevelChange}
+                    mode="dropdown"
+                    dropdownIconColor="#FFFFFF"
+                  >
+                    <Picker.Item label="Easy" value="easy" color="#FFFFFF" />
+                    <Picker.Item label="Medium" value="medium" color="#FFFFFF" />
+                    <Picker.Item label="Hard" value="hard" color="#FFFFFF" />
+                  </Picker>
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.sidebarButton} onPress={handlePauseResume}>
+              <Ionicons name={isPlay ? "pause" : "play"} size={18} color="#FFFFFF" />
+              <Text style={styles.sidebarButtonText}>{pauseName}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sidebarButton} onPress={toggleBoardOrientation}>
+              <Ionicons name="swap-vertical" size={18} color="#FFFFFF" />
+              <Text style={styles.sidebarButtonText}>Flip Board</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sidebarButton} onPress={resetGame}>
+              <Ionicons name="refresh" size={18} color="#FFFFFF" />
+              <Text style={styles.sidebarButtonText}>Restart</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sidebarButton} onPress={handleExit}>
+              <Ionicons name="exit" size={18} color="#FFFFFF" />
+              <Text style={styles.sidebarButtonText}>Exit</Text>
+            </TouchableOpacity>
+
+            <View style={styles.toggleSection}>
+              <Text style={styles.sectionTitle}>Options</Text>
+              
+              <View style={styles.toggleContainer}>
+                <Text style={styles.toggleLabel}>Show Moves</Text>
+                <TouchableOpacity
+                  style={[styles.toggleSwitch, showMoves ? styles.toggleSwitchOn : styles.toggleSwitchOff]}
+                  onPress={toggleShowMoves}
+                >
+                  <View style={[styles.toggleKnob, showMoves ? styles.toggleKnobOn : styles.toggleKnobOff]} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.colorSection}>
+              <Text style={styles.sectionTitle}>Board Colors</Text>
+              <View style={styles.colorPalette}>
+                <TouchableOpacity 
+                  style={styles.colorOption1} 
+                  onPress={() => handleColorChange('#EDEDED','#8B5A5A')} 
+                />
+                <TouchableOpacity 
+                  style={styles.colorOption2} 
+                  onPress={() => handleColorChange('#D3D3D3', '#A9A9A9')} 
+                />
+                <TouchableOpacity 
+                  style={styles.colorOption3} 
+                  onPress={() => handleColorChange('#FAF0E6', '#5F9EA0')} 
+                />
+              </View>
+            </View>
+
+            <View style={styles.historySection}>
+              <Text style={styles.sectionTitle}>Move History</Text>
+              <ScrollView style={styles.historyScroll} showsVerticalScrollIndicator={false}>
+                {moveHistory.length === 0 ? (
+                  <Text style={styles.noHistoryText}>No moves yet</Text>
+                ) : (
+                  moveHistory.map((move, index) => (
+                    <View key={index} style={styles.historyItem}>
+                      <Text style={styles.historyText}>
+                        {Math.floor(index / 2) + 1}. {move.san}
+                      </Text>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </>
       )}
 
-      <View style={styles.capturedContainer}>
-        <View style={styles.user}>
-          <Image source={require('../assets/images/pieces/black-rook.png')} style={styles.userImg} />
-          {mode !== 'unlimited' && <Text style={styles.timerText}>{blackTimer}s</Text>}
-        </View>
-        <View style={styles.capturedPieces}>
-          {capturedPieces.black.map((piece, index) => (
-            <Image key={index} source={pieceImages[piece]} style={styles.capturedPieceImage} />
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.chessboardContainer}>
-        {renderBoard.map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.row}>
-            {row.map((square, colIndex) => {
-              const adjustedRow = isBoardFlipped ? 7 - rowIndex : rowIndex;
-              const adjustedCol = isBoardFlipped ? 7 - colIndex : colIndex;
-              const squareName = `${String.fromCharCode(97 + adjustedCol)}${8 - adjustedRow}`;
-              return (
-                <TouchableOpacity
-                  key={`${adjustedRow}-${adjustedCol}`}
-                  style={[
-                    styles.square,
-                    (adjustedRow + adjustedCol) % 2 === 0 ? { backgroundColor: selectedColor.light } : { backgroundColor: selectedColor.dark },
-                    selectedSquare === squareName && styles.selectedSquare,
-                    kingInCheck === squareName && styles.kingInCheckSquare,
-                    showMoves && validMoves.includes(squareName) && styles.validMoveSquare,
-                  ]}
-                  onPress={() => onSquarePress(adjustedRow, colIndex)}
-                >
-                  {showMoves && validMoves.includes(squareName) && (
-                    <Image source={greenDotImage} style={styles.validMoveDot} />
-                  )}
-                  {square && (
-                    <Image source={pieceImages[square.color === 'w' ? square.type.toUpperCase() : square.type]} style={styles.pieceImage} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.capturedContainer}>
-        <View style={styles.capturedPieces}>
-          {capturedPieces.white.map((piece, index) => (
-            <Image key={index} source={pieceImages[piece]} style={styles.capturedPieceImage} />
-          ))}
-        </View>
-        <View style={styles.user}>
-          <Image source={require('../assets/images/pieces/white-rook.png')} style={styles.userImg} />
-          {mode !== 'unlimited' && <Text style={styles.timerText}>{whiteTimer}s</Text>}
-        </View>
-      </View>
-
+      {/* Minimalistic Modals */}
       <Modal
-        transparent
-        animationType="slide"
         visible={promotionModalVisible}
+        transparent={true}
+        animationType="fade"
         onRequestClose={() => setPromotionModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
+        <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Choose a piece for promotion:</Text>
+            <Text style={styles.modalTitle}>Choose Promotion</Text>
             <View style={styles.promotionOptions}>
               {['q', 'r', 'b', 'n'].map(piece => (
-                <TouchableOpacity key={piece} onPress={() => handlePromotion(piece)}>
-                  <Image source={pieceImages[currentTurn === 'w' ? piece.toUpperCase() : piece]} style={styles.pieceImage} />
+                <TouchableOpacity
+                  key={piece}
+                  onPress={() => handlePromotion(piece)}
+                  style={styles.promotionOption}
+                >
+                  <Image source={pieceImages[piece]} style={styles.promotionPiece} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -620,213 +785,198 @@ export default function ChessApp() {
       </Modal>
 
       <Modal
-        transparent
-        animationType="slide"
         visible={gameOverModalVisible}
+        transparent={true}
+        animationType="fade"
         onRequestClose={() => setGameOverModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
+        <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{gameOverMessage}</Text>
-            <TouchableOpacity style={styles.button} onPress={handleRematch}>
-              <Text style={styles.buttonText}>Rematch</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.button} onPress={handleExit}>
-              <Text style={styles.buttonText}>Exit</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        transparent
-        animationType="slide"
-        visible={exitModalVisible}
-        onRequestClose={() => setExitModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Do you want to leave?</Text>
-            <View style={styles.modalButtonContainer}>
-              <TouchableOpacity style={[styles.button, styles.confirmButton]} onPress={handleConfirmExit}>
-                <Text style={styles.buttonText}>Yes</Text>
+            <Ionicons name="trophy" size={40} color="#FFFFFF" />
+            <Text style={styles.modalTitle}>Game Over</Text>
+            <Text style={styles.gameOverMessage}>{gameOverMessage}</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalButton} onPress={handleRematch}>
+                <Text style={styles.modalButtonText}>Rematch</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancelModal}>
-                <Text style={styles.buttonText}>No</Text>
+              <TouchableOpacity style={styles.modalButton} onPress={handleExit}>
+                <Text style={styles.modalButtonText}>Exit</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
+
+      <Modal
+        visible={exitModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setExitModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Ionicons name="warning" size={40} color="#FFFFFF" />
+            <Text style={styles.modalTitle}>Leave Game?</Text>
+            <Text style={styles.exitMessage}>Are you sure you want to leave?</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalButton} onPress={handleConfirmExit}>
+                <Text style={styles.modalButtonText}>Yes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButton} onPress={handleCancelModal}>
+                <Text style={styles.modalButtonText}>No</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    width: '100%',
-    backgroundColor: '#0F0F0F',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: height * 0.05,
-    paddingHorizontal: 10,
+    paddingTop:35,
+    backgroundColor: '#000000',
   },
-   action: {display:"flex",flexDirection:"row",justifyContent:"space-between",width:"100%",margin:0,position:"absolute",top:30,padding:10 },
-  setting: {
-    width: 36,
-    height: 36,
-    // tintColor: '#EDEDED',
-  },
-  levelSelector: {
+  headerContainer: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#2A2A2A',
-    borderRadius: 15,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333333',
   },
-  levelText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#EDEDED',
-    marginRight: 8,
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1A1A1A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333333',
   },
-  sidebar: {
-    position: 'absolute',
-    top: height * 0.1,
-    right: 15,
-    width: Math.min(width * 0.55, 280),
-    maxHeight: height * 0.65,
-    backgroundColor: '#2A2A2A',
-    borderRadius: 15,
-    padding: 15,
-    zIndex: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 10,
+  headerCenter: {
+    alignItems: 'center',
   },
-  closeButton: {
-    alignSelf: 'flex-end',
-    padding: 5,
-  },
-  closeButtonText: {
-    color: '#B76E79',
+  gameMode: {
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    textAlign: 'center',
-    lineHeight: 24,
   },
-  button: {
-    backgroundColor: '#B76E79',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 15,
-    marginVertical: 6,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
+  gameModeSubtext: {
+    color: '#AAAAAA',
+    fontSize: 12,
+    marginTop: 2,
   },
-  buttonText: {
-    color: '#EDEDED',
-    fontSize: 14,
-    fontWeight: '600',
-    textTransform: 'uppercase',
+  playerSection: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
   },
-  toggleContainer: {
+  playerCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginVertical: 8,
-    width: '100%',
+    padding: 12,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 10,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#333333',
   },
-  toggleLabel: {
-    color: '#EDEDED',
-    fontSize: 14,
-    fontWeight: '600',
+  playerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
-  toggleSwitch: {
-    width: 48,
-    height: 26,
-    borderRadius: 13,
-    padding: 2,
+  playerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#333333',
     justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  toggleSwitchOn: {
-    backgroundColor: '#B76E79',
+  playerDetails: {
+    flex: 1,
   },
-  toggleSwitchOff: {
-    backgroundColor: '#4A4A4A',
+  playerName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
-  toggleKnob: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#EDEDED',
+  statusText: {
+    color: '#AAAAAA',
+    fontSize: 12,
+    marginTop: 2,
   },
-  toggleKnobOn: {
-    transform: [{ translateX: 20 }],
+  timerContainer: {
+    backgroundColor: '#333333',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
   },
-  toggleKnobOff: {
-    transform: [{ translateX: 0 }],
-  },
-  boardColor: {
-    color: '#EDEDED',
+  timerText: {
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
-    marginTop: 12,
-    marginBottom: 8,
+    minWidth: 45,
     textAlign: 'center',
   },
-  colorPalate: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  urgentTimer: {
+    color: '#FF4444',
+  },
+  capturedSection: {
+    backgroundColor: '#0F0F0F',
+    borderRadius: 8,
+    padding: 10,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#333333',
+    minHeight: 50,
+  },
+  capturedLabel: {
+    color: '#AAAAAA',
+    fontSize: 10,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  capturedScrollView: {
+    maxHeight: 30,
+  },
+  capturedScrollContent: {
+    alignItems: 'center',
+    paddingHorizontal: 5,
+  },
+  capturedPieceImage: {
+    width: squareSize * 0.4,
+    height: squareSize * 0.4,
+    resizeMode: 'contain',
+    margin: 2,
+  },
+  noCapturedText: {
+    color: '#666666',
+    fontSize: 10,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 6,
+  },
+  boardSection: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 10,
-  },
-  buttonColor1: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#8B5A5A',
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: '#B76E79',
-  },
-  buttonColor2: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#A9A9A9',
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: '#B76E79',
-  },
-  buttonColor3: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#5F9EA0',
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: '#B76E79',
+    paddingVertical: 10,
   },
   chessboardContainer: {
-    backgroundColor: '#2A2A2A',
-    borderRadius: 10,
-    padding: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 8,
-    width: squareSize * 8 + 8,
-    alignSelf: 'center',
-    marginVertical: height * 0.02,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    padding: 6,
+    borderWidth: 2,
+    borderColor: '#333333',
   },
   row: {
     flexDirection: 'row',
@@ -836,29 +986,27 @@ const styles = StyleSheet.create({
     height: squareSize,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 4,
+    borderRadius: 2,
   },
   selectedSquare: {
-    backgroundColor: 'rgba(122, 161, 142, 0.5)',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderWidth: 2,
-    borderColor: 'rgba(0, 255, 85, 0.61)',
-    borderRadius: 4,
+    borderColor: '#FFFFFF',
   },
   validMoveSquare: {
     borderWidth: 2,
-    borderColor: '#00FF62',
-    borderRadius: 4,
+    borderColor: '#AAAAAA',
   },
   validMoveDot: {
-    width: squareSize * 0.8,
-    height: squareSize * 0.8,
-    resizeMode: 'contain',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#AAAAAA',
     position: 'absolute',
     zIndex: 1,
   },
   kingInCheckSquare: {
-    backgroundColor: '#DC143C',
-    borderRadius: 4,
+    backgroundColor: '#AA0000',
   },
   pieceImage: {
     width: squareSize * 0.9,
@@ -866,152 +1014,280 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
     zIndex: 2,
   },
-  capturedContainer: {
-    width: '95%',
+  controlPanel: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  undoButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2A2A2A',
-    paddingVertical: 8,
+    backgroundColor: '#333333',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#555555',
+  },
+  undoButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    zIndex: 998,
+  },
+  sidebar: {
+    position: 'absolute',
+    top: 35,
+    right: 0,
+    bottom: 0,
+    width: width * 0.75,
+    maxWidth: 280,
+    backgroundColor: '#0F0F0F',
+    padding: 20,
+    zIndex: 999,
+    borderLeftWidth: 1,
+    borderLeftColor: '#333333',
+  },
+  closeButton: {
+    alignSelf: 'flex-end',
+    padding: 8,
+    marginBottom: 10,
+  },
+  sidebarTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  levelSection: {
+    marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333333',
+  },
+  sectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  levelSelectorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333333',
     paddingHorizontal: 12,
-    marginVertical: height * 0.015,
+    paddingVertical: 8,
     borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: '#555555',
   },
- undo: {
-  backgroundColor: '#2A2A2A', // Charcoal gray background
-  paddingVertical: 12,
-  paddingHorizontal: 20,
-  borderRadius: 12,
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginVertical: 10,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.3,
-  shadowRadius: 4,
-  elevation: 5,
-},
-buttonText: {
-  color: '#EDEDED', // Soft pearl text
-  fontSize: 16,
-  fontWeight: '600',
-}
-,
-  capturedPieces: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    maxWidth: '60%',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
+  pickerContainer: {
+    flex: 1,
+    marginLeft: 8,
   },
-  capturedPieceImage: {
-    width: squareSize * 0.5,
-    height: squareSize * 0.5,
-    resizeMode: 'contain',
-    margin: 3,
+  picker: {
+    color: '#FFFFFF',
+    backgroundColor: 'transparent',
   },
-  user: {
+  sidebarButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C1C',
-    padding: 6,
-    borderRadius: 10,
-    minWidth: 60, // Prevent layout shift
+    backgroundColor: '#1A1A1A',
+    padding: 12,
+    borderRadius: 8,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#333333',
   },
-  userImg: {
+  sidebarButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  toggleSection: {
+    marginTop: 20,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#333333',
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginVertical: 8,
+  },
+  toggleLabel: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  toggleSwitch: {
+    width: 50,
+    height: 26,
+    borderRadius: 13,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleSwitchOn: {
+    backgroundColor: '#555555',
+  },
+  toggleSwitchOff: {
+    backgroundColor: '#333333',
+  },
+  toggleKnob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+  },
+  toggleKnobOn: {
+    transform: [{ translateX: 24 }],
+  },
+  toggleKnobOff: {
+    transform: [{ translateX: 0 }],
+  },
+  colorSection: {
+    marginTop: 15,
+  },
+  colorPalette: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 8,
+  },
+  colorOption1: {
     width: 32,
     height: 32,
+    backgroundColor: '#8B5A5A',
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: '#B76E79',
-    marginRight: 6,
+    borderColor: '#AAAAAA',
   },
-  timerText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#EDEDED',
+  colorOption2: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#A9A9A9',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#AAAAAA',
   },
-  modalContainer: {
+  colorOption3: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#5F9EA0',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#AAAAAA',
+  },
+  historySection: {
+    marginTop: 15,
     flex: 1,
+  },
+  historyScroll: {
+    maxHeight: 80,
+    marginTop: 8,
+  },
+  historyItem: {
+    backgroundColor: '#1A1A1A',
+    padding: 6,
+    borderRadius: 4,
+    marginVertical: 1,
+  },
+  historyText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+  },
+  noHistoryText: {
+    color: '#666666',
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 15, 15, 0.8)',
-    zIndex: 30,
   },
   modalContent: {
-    width: Math.min(width * 0.85, 300),
-    backgroundColor: '#2A2A2A',
+    width: width * 0.8,
+    backgroundColor: '#1A1A1A',
     borderRadius: 15,
-    padding: 16,
+    padding: 25,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 10,
+    borderWidth: 1,
+    borderColor: '#333333',
   },
   modalTitle: {
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#EDEDED',
-    marginBottom: 16,
+    marginVertical: 15,
     textAlign: 'center',
   },
   promotionOptions: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
-    paddingHorizontal: 12,
+    marginTop: 10,
   },
-  moveHistoryContainer: {
-    marginTop: 16,
+  promotionOption: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#333333',
+    borderWidth: 1,
+    borderColor: '#555555',
+  },
+  promotionPiece: {
+    width: 40,
+    height: 40,
+    resizeMode: 'contain',
+  },
+  gameOverMessage: {
+    color: '#AAAAAA',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  exitMessage: {
+    color: '#AAAAAA',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
     width: '100%',
+    justifyContent: 'space-around',
+    marginTop: 10,
   },
-  moveHistoryTitle: {
-    color: '#EDEDED',
+  modalButton: {
+    backgroundColor: '#333333',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#555555',
+    marginHorizontal: 5,
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  moveHistory: {
-    maxHeight: height * 0.15,
-  },
-  moveText: {
-    color: '#EDEDED',
-    fontSize: 12,
-    marginVertical: 2,
-  },
-  confirmButton: {
-    backgroundColor: '#B76E79',
-    flex: 1,
-    marginRight: 8,
-  },
-  cancelButton: {
-    backgroundColor: '#4A4A4A',
-    flex: 1,
-  },
-  modalButtonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: 12,
-  },
-});
-
-const pickerSelectStyles = StyleSheet.create({
-  inputAndroid: {
-    width: 100,
-    fontSize: 12,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    color: '#EDEDED',
-    backgroundColor: '#1C1C1C',
-    borderWidth: 1,
-    borderColor: '#B76E79',
+    textAlign: 'center',
   },
 });

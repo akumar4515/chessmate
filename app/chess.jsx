@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Image, Modal, Dimensions, ScrollView, BackHandler } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Image, Modal, Dimensions, ScrollView, BackHandler, SafeAreaView, StatusBar } from 'react-native';
 import { Chess } from 'chess.js';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
+const squareSize = Math.min(width * 0.113, 45);
 
 // Piece images for the board and captured pieces
 const pieceImages = {
@@ -66,20 +68,38 @@ export default function ChessApp() {
 
   const loadSounds = async () => {
     try {
-      const [move, capture, castle, promote, check] = await Promise.all([
-        Audio.Sound.createAsync(require('../assets/sounds/move.mp3')).catch(e => ({ sound: null })),
-        Audio.Sound.createAsync(require('../assets/sounds/capture.mp3')).catch(e => ({ sound: null })),
-        Audio.Sound.createAsync(require('../assets/sounds/castle.mp3')).catch(e => ({ sound: null })),
-        Audio.Sound.createAsync(require('../assets/sounds/promote.mp3')).catch(e => ({ sound: null })),
-        Audio.Sound.createAsync(require('../assets/sounds/move-check.mp3')).catch(e => ({ sound: null })),
-      ]);
-      setMoveSound(move.sound);
-      setCaptureSound(capture.sound);
-      setCastleSound(castle.sound);
-      setPromoteSound(promote.sound);
-      setCheckSound(check.sound);
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: false,
+        interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+        playThroughEarpieceAndroid: false,
+      });
+
+      console.log('🔊 Loading chess sounds...');
+      const soundPromises = [
+        Audio.Sound.createAsync(require('../assets/sounds/move.mp3'), { volume: 0.7 }),
+        Audio.Sound.createAsync(require('../assets/sounds/capture.mp3'), { volume: 0.8 }),
+        Audio.Sound.createAsync(require('../assets/sounds/castle.mp3'), { volume: 0.7 }),
+        Audio.Sound.createAsync(require('../assets/sounds/promote.mp3'), { volume: 0.8 }),
+        Audio.Sound.createAsync(require('../assets/sounds/move-check.mp3'), { volume: 0.9 }),
+      ];
+
+      const results = await Promise.allSettled(soundPromises);
+      const [move, capture, castle, promote, check] = results.map(result =>
+        result.status === 'fulfilled' ? result.value.sound : null
+      );
+
+      setMoveSound(move);
+      setCaptureSound(capture);
+      setCastleSound(castle);
+      setPromoteSound(promote);
+      setCheckSound(check);
+      console.log('🔊 Chess sounds loaded successfully');
     } catch (error) {
-      console.warn('Error loading sounds:', error);
+      console.warn('🔊 Error loading chess sounds:', error);
     }
   };
 
@@ -96,9 +116,13 @@ export default function ChessApp() {
   const playSound = async (sound) => {
     if (sound) {
       try {
-        await sound.replayAsync();
+        const status = await sound.getStatusAsync();
+        if (status.isLoaded) {
+          await sound.setPositionAsync(0);
+          await sound.playAsync();
+        }
       } catch (error) {
-        console.warn('Error playing sound:', error);
+        console.warn('🔊 Error playing sound:', error);
       }
     }
   };
@@ -106,22 +130,13 @@ export default function ChessApp() {
   // Set initial timers based on game mode
   useEffect(() => {
     let initialTime;
-     switch (mode) {
-    case 'classic':
-      initialTime = 60; // 60 seconds
-      break;
-    case 'blitz':
-      initialTime = 30; // 30 seconds
-      break;
-    case 'unlimited':
-      initialTime = 999999; // Effectively no time limit
-      break;
-    case 'rush':
-      initialTime = 20; // 20 seconds
-      break;
-    default:
-      initialTime = 60; // Fallback
-  }
+    switch (mode) {
+      case 'classic': initialTime = 60; break;
+      case 'blitz': initialTime = 30; break;
+      case 'unlimited': initialTime = 999999; break;
+      case 'rush': initialTime = 20; break;
+      default: initialTime = 60;
+    }
     setWhiteTimer(initialTime);
     setBlackTimer(initialTime);
   }, [mode]);
@@ -221,8 +236,8 @@ export default function ChessApp() {
             updateMoveHistory();
             checkGameOver();
           }
+          setSelectedSquare(null);
         }
-        setSelectedSquare(null);
       } else if (piece?.color === chess.turn()) {
         setSelectedSquare(square);
       }
@@ -243,6 +258,7 @@ export default function ChessApp() {
       } else {
         playSound(promoteSound);
       }
+
       setGameFEN(chess.fen());
       setCurrentTurn(chess.turn());
       updateTimersAfterMove();
@@ -288,45 +304,34 @@ export default function ChessApp() {
     setMoveHistory([]);
   };
 
-const resetTimersToInitial = () => {
-  let initialTime;
-  switch (mode) {
-    case 'classic':
-      initialTime = 60; // 60 seconds
-      break;
-    case 'blitz':
-      initialTime = 30; // 30 seconds
-      break;
-    case 'unlimited':
-      initialTime = 999999; // Effectively no time limit
-      break;
-    case 'rush':
-      initialTime = 20; // 20 seconds
-      break;
-    default:
-      initialTime = 60; // Fallback
-  }
-  setWhiteTimer(initialTime);
-  setBlackTimer(initialTime);
-};
-
-const updateTimersAfterMove = () => {
-  if (mode === 'classic') {
-    setWhiteTimer(60); // Reset to 60s
-    setBlackTimer(60);
-  } else if (mode === 'rush') {
-    setWhiteTimer(20); // Reset to 20s
-    setBlackTimer(20);
-  } else if (mode === 'blitz') {
-    if (currentTurn === 'w') {
-      setBlackTimer(prev => Math.min(prev + 2, 30)); // Add 2s, cap at 30s
-    } else {
-      setWhiteTimer(prev => Math.min(prev + 2, 30)); // Add 2s, cap at 30s
+  const resetTimersToInitial = () => {
+    let initialTime;
+    switch (mode) {
+      case 'classic': initialTime = 60; break;
+      case 'blitz': initialTime = 30; break;
+      case 'unlimited': initialTime = 999999; break;
+      case 'rush': initialTime = 20; break;
+      default: initialTime = 60;
     }
-  } else if (mode === 'unlimited') {
-    // Do nothing: no time limit
-  }
-};
+    setWhiteTimer(initialTime);
+    setBlackTimer(initialTime);
+  };
+
+  const updateTimersAfterMove = () => {
+    if (mode === 'classic') {
+      setWhiteTimer(60);
+      setBlackTimer(60);
+    } else if (mode === 'rush') {
+      setWhiteTimer(20);
+      setBlackTimer(20);
+    } else if (mode === 'blitz') {
+      if (currentTurn === 'w') {
+        setBlackTimer(prev => Math.min(prev + 2, 30));
+      } else {
+        setWhiteTimer(prev => Math.min(prev + 2, 30));
+      }
+    }
+  };
 
   const checkGameOver = () => {
     if (chess.isCheckmate()) {
@@ -358,33 +363,31 @@ const updateTimersAfterMove = () => {
   };
 
   const handleExit = () => {
-  setExitModalVisible(true);
-};
-
-const handleConfirmExit = () => {
-  resetGame();
-  navigation.navigate('index');
-  setExitModalVisible(false);
-  setGameOverModalVisible(false);
-};
-
-const handleCancelExit = () => {
-  setExitModalVisible(false);
-};
-
-useEffect(() => {
-  const backAction = () => {
-    if (!gameOverModalVisible && !promotionModalVisible) {
-      setExitModalVisible(true);
-      return true; // Prevent default back action
-    }
-    return false; // Allow default back action
+    setExitModalVisible(true);
   };
 
-  const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+  const handleConfirmExit = () => {
+    resetGame();
+    navigation.navigate('index');
+    setExitModalVisible(false);
+    setGameOverModalVisible(false);
+  };
 
-  return () => backHandler.remove();
-}, [gameOverModalVisible, promotionModalVisible]);
+  const handleCancelExit = () => {
+    setExitModalVisible(false);
+  };
+
+  useEffect(() => {
+    const backAction = () => {
+      if (!gameOverModalVisible && !promotionModalVisible) {
+        setExitModalVisible(true);
+        return true;
+      }
+      return false;
+    };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [gameOverModalVisible, promotionModalVisible]);
 
   const handleRematch = () => {
     resetGame();
@@ -399,130 +402,280 @@ useEffect(() => {
 
   const renderBoard = isBoardFlipped ? board.slice().reverse() : board;
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.action}>
-        <TouchableOpacity
-  style={styles.undo}
-  onPress={handleUndo}
-  activeOpacity={0.7} // Adds a fade effect when pressed
->
-  <Text style={styles.buttonText}>Undo Move</Text>
-</TouchableOpacity>
+  const formatTime = (seconds) => {
+    if (mode === 'unlimited') return '∞';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
-        <TouchableOpacity onPress={toggleSidebar}>
-          <Image source={require('../assets/images/home/setting.png')} style={styles.setting} />
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      
+      {/* Minimalistic Header */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+        
+        <View style={styles.headerCenter}>
+          <Text style={styles.gameMode}>{mode.toUpperCase()}</Text>
+          <Text style={styles.gameModeSubtext}>Local Game</Text>
+        </View>
+
+        <TouchableOpacity onPress={toggleSidebar} style={styles.headerButton}>
+          <Ionicons name="settings" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
-      {isSidebarOpen && (
-        <View style={styles.sidebar}>
-          <TouchableOpacity style={styles.closeButton} onPress={toggleSidebar}>
-            <Text style={styles.closeButtonText}>X</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={handlePauseResume}>
-            <Text style={styles.buttonText}>{pauseName}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.button} onPress={toggleBoardOrientation}>
-            <Text style={styles.buttonText}>Flip Board</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={resetGame}>
-            <Text style={styles.buttonText}>Restart</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={handleExit}>
-            <Text style={styles.buttonText}>Exit</Text>
-          </TouchableOpacity>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Show Possible Moves</Text>
-            <TouchableOpacity
-              style={[styles.toggleSwitch, showMoves ? styles.toggleSwitchOn : styles.toggleSwitchOff]}
-              onPress={toggleShowMoves}
-            >
-              <View style={[styles.toggleKnob, showMoves ? styles.toggleKnobOn : styles.toggleKnobOff]} />
-            </TouchableOpacity>
+      {/* Player Section - Black */}
+      <View style={styles.playerSection}>
+        <View style={[styles.playerCard, currentTurn === 'b' && styles.activePlayerCard]}>
+          <View style={styles.playerInfo}>
+            <View style={styles.playerAvatar}>
+              <Ionicons name="person" size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.playerDetails}>
+              <Text style={styles.playerName}>Black</Text>
+              <Text style={styles.statusText}>
+                {currentTurn === 'b' ? 'Playing' : 'Waiting'}
+              </Text>
+            </View>
           </View>
-          <Text style={styles.boardColor}>Board Color</Text>
-          <View style={styles.colorPalate}>
-            <TouchableOpacity style={styles.buttonColor1} onPress={() => handleColorChange(  '#EDEDED','#8B5A5A')} />
-            <TouchableOpacity style={styles.buttonColor2} onPress={() => handleColorChange('#D3D3D3', '#A9A9A9')} />
-            <TouchableOpacity style={styles.buttonColor3} onPress={() => handleColorChange('#FAF0E6', '#5F9EA0')} />
-          </View>
-          <View style={styles.moveHistoryContainer}>
-            <Text style={styles.moveHistoryTitle}>Move History</Text>
-            <ScrollView style={styles.moveHistory}>
-              {moveHistory.map((move, index) => (
-                <Text key={index} style={styles.moveText}>
-                  {Math.floor(index / 2) + 1}. {move.san}
-                </Text>
-              ))}
-            </ScrollView>
-          </View>
+          {mode !== 'unlimited' && (
+            <View style={styles.timerContainer}>
+              <Text style={[styles.timerText, blackTimer <= 10 ? styles.urgentTimer : null]}>
+                {formatTime(blackTimer)}
+              </Text>
+            </View>
+          )}
         </View>
+
+        {/* Captured Pieces - Top */}
+        {/* <View style={styles.capturedSection}>
+          <Text style={styles.capturedLabel}>Captured by Black</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.capturedScrollView}
+            contentContainerStyle={styles.capturedScrollContent}
+          >
+            {capturedPieces.white.map((piece, index) => (
+              <Image
+                key={index}
+                source={pieceImages[piece]}
+                style={styles.capturedPieceImage}
+              />
+            ))}
+            {capturedPieces.white.length === 0 && (
+              <Text style={styles.noCapturedText}>None</Text>
+            )}
+          </ScrollView>
+        </View> */}
+      </View>
+
+      {/* Chess Board */}
+      <View style={styles.boardSection}>
+        <View style={styles.chessboardContainer}>
+          {renderBoard.map((row, rowIndex) => (
+            <View key={rowIndex} style={styles.row}>
+              {row.map((square, colIndex) => {
+                const adjustedRow = isBoardFlipped ? 7 - rowIndex : rowIndex;
+                const adjustedCol = isBoardFlipped ? 7 - colIndex : colIndex;
+                const squareName = `${String.fromCharCode(97 + adjustedCol)}${8 - adjustedRow}`;
+                const isSelected = selectedSquare === squareName;
+                const isValidMove = validMoves.includes(squareName);
+                const isKingInCheck = kingInCheck === squareName;
+
+                return (
+                  <TouchableOpacity
+                    key={`${rowIndex}-${colIndex}`}
+                    style={[
+                      styles.square,
+                      {
+                        backgroundColor: (adjustedRow + adjustedCol) % 2 === 0 
+                          ? selectedColor.light 
+                          : selectedColor.dark
+                      },
+                      isSelected && styles.selectedSquare,
+                      isValidMove && styles.validMoveSquare,
+                      isKingInCheck && styles.kingInCheckSquare,
+                    ]}
+                    onPress={() => onSquarePress(adjustedRow, adjustedCol)}
+                  >
+                    {showMoves && isValidMove && !square && (
+                      <View style={styles.validMoveDot} />
+                    )}
+                    {square && (
+                      <Image 
+                        source={pieceImages[square.color === 'w' ? square.type.toUpperCase() : square.type]} 
+                        style={styles.pieceImage} 
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Player Section - White */}
+      <View style={styles.playerSection}>
+        {/* Captured Pieces - Bottom */}
+        {/* <View style={styles.capturedSection}>
+          <Text style={styles.capturedLabel}>Captured by White</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.capturedScrollView}
+            contentContainerStyle={styles.capturedScrollContent}
+          >
+            {capturedPieces.black.map((piece, index) => (
+              <Image
+                key={index}
+                source={pieceImages[piece]}
+                style={styles.capturedPieceImage}
+              />
+            ))}
+            {capturedPieces.black.length === 0 && (
+              <Text style={styles.noCapturedText}>None</Text>
+            )}
+          </ScrollView>
+        </View> */}
+
+        <View style={[styles.playerCard, currentTurn === 'w' && styles.activePlayerCard]}>
+          <View style={styles.playerInfo}>
+            <View style={styles.playerAvatar}>
+              <Ionicons name="person" size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.playerDetails}>
+              <Text style={styles.playerName}>White</Text>
+              <Text style={styles.statusText}>
+                {currentTurn === 'w' ? 'Playing' : 'Waiting'}
+              </Text>
+            </View>
+          </View>
+          {mode !== 'unlimited' && (
+            <View style={styles.timerContainer}>
+              <Text style={[styles.timerText, whiteTimer <= 10 ? styles.urgentTimer : null]}>
+                {formatTime(whiteTimer)}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Control Panel */}
+      <View style={styles.controlPanel}>
+        <TouchableOpacity style={styles.undoButton} onPress={handleUndo}>
+          <Ionicons name="arrow-undo" size={18} color="#FFFFFF" />
+          <Text style={styles.undoButtonText}>Undo</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Minimalistic Sidebar */}
+      {isSidebarOpen && (
+        <>
+          <TouchableOpacity style={styles.overlay} onPress={toggleSidebar} />
+          <View style={styles.sidebar}>
+            <TouchableOpacity style={styles.closeButton} onPress={toggleSidebar}>
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            
+            <Text style={styles.sidebarTitle}>Settings</Text>
+
+            <TouchableOpacity style={styles.sidebarButton} onPress={handlePauseResume}>
+              <Ionicons name={isPlay ? "pause" : "play"} size={18} color="#FFFFFF" />
+              <Text style={styles.sidebarButtonText}>{pauseName}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sidebarButton} onPress={toggleBoardOrientation}>
+              <Ionicons name="swap-vertical" size={18} color="#FFFFFF" />
+              <Text style={styles.sidebarButtonText}>Flip Board</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sidebarButton} onPress={resetGame}>
+              <Ionicons name="refresh" size={18} color="#FFFFFF" />
+              <Text style={styles.sidebarButtonText}>Restart</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sidebarButton} onPress={handleExit}>
+              <Ionicons name="exit" size={18} color="#FFFFFF" />
+              <Text style={styles.sidebarButtonText}>Exit</Text>
+            </TouchableOpacity>
+
+            <View style={styles.toggleSection}>
+              <Text style={styles.sectionTitle}>Options</Text>
+              
+              <View style={styles.toggleContainer}>
+                <Text style={styles.toggleLabel}>Show Moves</Text>
+                <TouchableOpacity
+                  style={[styles.toggleSwitch, showMoves ? styles.toggleSwitchOn : styles.toggleSwitchOff]}
+                  onPress={toggleShowMoves}
+                >
+                  <View style={[styles.toggleKnob, showMoves ? styles.toggleKnobOn : styles.toggleKnobOff]} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.colorSection}>
+              <Text style={styles.sectionTitle}>Board Colors</Text>
+              <View style={styles.colorPalette}>
+                <TouchableOpacity 
+                  style={styles.colorOption1} 
+                  onPress={() => handleColorChange('#EDEDED','#8B5A5A')} 
+                />
+                <TouchableOpacity 
+                  style={styles.colorOption2} 
+                  onPress={() => handleColorChange('#D3D3D3', '#A9A9A9')} 
+                />
+                <TouchableOpacity 
+                  style={styles.colorOption3} 
+                  onPress={() => handleColorChange('#FAF0E6', '#5F9EA0')} 
+                />
+              </View>
+            </View>
+
+            <View style={styles.historySection}>
+              <Text style={styles.sectionTitle}>Move History</Text>
+              <ScrollView style={styles.historyScroll} showsVerticalScrollIndicator={false}>
+                {moveHistory.length === 0 ? (
+                  <Text style={styles.noHistoryText}>No moves yet</Text>
+                ) : (
+                  moveHistory.map((move, index) => (
+                    <View key={index} style={styles.historyItem}>
+                      <Text style={styles.historyText}>
+                        {Math.floor(index / 2) + 1}. {move.san}
+                      </Text>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </>
       )}
 
-      <View style={styles.capturedContainer}>
-        <View style={styles.user}>
-          <Image source={require('../assets/images/pieces/black-rook.png')} style={styles.userImg} />
-          {mode !== 'unlimited' && <Text style={styles.timerText}>{blackTimer}s</Text>}
-        </View>
-        <View style={styles.capturedPieces}>
-          {capturedPieces.white.map((piece, index) => (
-            <Image key={index} source={pieceImages[piece.toUpperCase()]} style={styles.capturedPieceImage} />
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.chessboardContainer}>
-        {renderBoard.map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.row}>
-            {row.map((square, colIndex) => {
-              const adjustedRow = isBoardFlipped ? 7 - rowIndex : rowIndex;
-              const adjustedCol = isBoardFlipped ? 7 - colIndex : colIndex;
-              const squareName = `${String.fromCharCode(97 + adjustedCol)}${8 - adjustedRow}`;
-              return (
-                <TouchableOpacity
-                  key={`${adjustedRow}-${adjustedCol}`}
-                  style={[
-                    styles.square,
-                    (adjustedRow + adjustedCol) % 2 === 0 ? { backgroundColor: selectedColor.light } : { backgroundColor: selectedColor.dark },
-                    selectedSquare === squareName && styles.selectedSquare,
-                    kingInCheck === squareName && styles.kingInCheckSquare,
-                    showMoves && validMoves.includes(squareName) && styles.validMoveSquare,
-                  ]}
-                  onPress={() => onSquarePress(adjustedRow, adjustedCol)}
-                >
-                  {showMoves && validMoves.includes(squareName) && (
-                    <Image source={greenDotImage} style={styles.validMoveDot} />
-                  )}
-                  {square && <Image source={pieceImages[square.color === 'w' ? square.type.toUpperCase() : square.type]} style={styles.pieceImage} />}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.capturedContainer}>
-        <View style={styles.capturedPieces}>
-          {capturedPieces.black.map((piece, index) => (
-            <Image key={index} source={pieceImages[piece.toLowerCase()]} style={styles.capturedPieceImage} />
-          ))}
-        </View>
-        <View style={styles.user}>
-          <Image source={require('../assets/images/pieces/white-rook.png')} style={styles.userImg} />
-          {mode !== 'unlimited' && <Text style={styles.timerText}>{whiteTimer}s</Text>}
-        </View>
-      </View>
-
-      <Modal transparent animationType="slide" visible={promotionModalVisible} onRequestClose={() => setPromotionModalVisible(false)}>
-        <View style={styles.modalContainer}>
+      {/* Promotion Modal */}
+      <Modal
+        visible={promotionModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setPromotionModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Choose a piece for promotion:</Text>
+            <Text style={styles.modalTitle}>Choose Promotion</Text>
             <View style={styles.promotionOptions}>
               {['q', 'r', 'b', 'n'].map(piece => (
-                <TouchableOpacity key={piece} onPress={() => handlePromotion(piece)}>
-                  <Image source={pieceImages[piece]} style={styles.pieceImage} />
+                <TouchableOpacity
+                  key={piece}
+                  onPress={() => handlePromotion(piece)}
+                  style={styles.promotionOption}
+                >
+                  <Image source={pieceImages[piece]} style={styles.promotionPiece} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -530,121 +683,492 @@ useEffect(() => {
         </View>
       </Modal>
 
-      <Modal transparent animationType="slide" visible={gameOverModalVisible} onRequestClose={() => setGameOverModalVisible(false)}>
-        <View style={styles.modalContainer}>
+      {/* Game Over Modal */}
+      <Modal
+        visible={gameOverModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setGameOverModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{gameOverMessage}</Text>
-            <TouchableOpacity style={styles.button} onPress={handleRematch}>
-              <Text style={styles.buttonText}>Rematch</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.button} onPress={handleExit}>
-              <Text style={styles.buttonText}>Exit</Text>
-            </TouchableOpacity>
+            <Ionicons name="trophy" size={40} color="#FFFFFF" />
+            <Text style={styles.modalTitle}>Game Over</Text>
+            <Text style={styles.gameOverMessage}>{gameOverMessage}</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalButton} onPress={handleRematch}>
+                <Text style={styles.modalButtonText}>Rematch</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButton} onPress={handleExit}>
+                <Text style={styles.modalButtonText}>Exit</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
 
+      {/* Exit Modal */}
       <Modal
-  transparent={true}
-  animationType="slide"
-  visible={exitModalVisible}
-  onRequestClose={() => setExitModalVisible(false)}
->
-  <View style={styles.modalContainer}>
-    <View style={styles.modalContent}>
-      <Text style={styles.modalTitle}>Do you want to leave?</Text>
-      <View style={styles.modalButtonContainer}>
-        <TouchableOpacity style={[styles.button, styles.confirmButton]} onPress={handleConfirmExit}>
-          <Text style={styles.buttonText}>Yes</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancelExit}>
-          <Text style={styles.buttonText}>No</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  </View>
-</Modal>
-    </View>
+        visible={exitModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setExitModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Ionicons name="warning" size={40} color="#FFFFFF" />
+            <Text style={styles.modalTitle}>Leave Game?</Text>
+            <Text style={styles.exitMessage}>Do you want to leave?</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalButton} onPress={handleConfirmExit}>
+                <Text style={styles.modalButtonText}>Yes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButton} onPress={handleCancelExit}>
+                <Text style={styles.modalButtonText}>No</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F0F0F', alignItems: 'center', justifyContent: 'center', paddingTop: 40 },
-  action: {display:"flex",flexDirection:"row",justifyContent:"space-between",width:"100%",margin:0,position:"absolute",top:30,padding:10 },
-  setting: { width: 40, height: 40, },
-  sidebar: {
-    position: 'absolute', top: 80, right: 20, width: width * 0.6, backgroundColor: '#2A2A2A', borderRadius: 20, padding: 20, zIndex: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 6, elevation: 10,
+  container: {
+    flex: 1,
+    paddingTop:35,
+    backgroundColor: '#000000',
   },
- undo: {
-  backgroundColor: '#2A2A2A', // Charcoal gray background
-  paddingVertical: 12,
-  paddingHorizontal: 20,
-  borderRadius: 12,
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginVertical: 10,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.3,
-  shadowRadius: 4,
-  elevation: 5,
-},
-buttonText: {
-  color: '#EDEDED', // Soft pearl text
-  fontSize: 16,
-  fontWeight: '600',
-}
-,
-  closeButton: { alignSelf: 'flex-end', padding: 10 },
-  closeButtonText: { color: '#B76E79', fontSize: 20, fontWeight: 'bold', backgroundColor: 'white', borderRadius: 15, width: 30, height: 30, textAlign: 'center', lineHeight: 30 },
-  button: { backgroundColor: '#B76E79', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 25, marginVertical: 10, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
-  buttonText: { color: '#EDEDED', fontSize: 16, fontWeight: '600', textTransform: 'uppercase' },
-  toggleContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 10 },
-  toggleLabel: { color: '#EDEDED', fontSize: 16, fontWeight: '600' },
-  toggleSwitch: { width: 50, height: 28, borderRadius: 14, padding: 2, justifyContent: 'center' },
-  toggleSwitchOn: { backgroundColor: '#B76E79' },
-  toggleSwitchOff: { backgroundColor: '#4A4A4A' },
-  toggleKnob: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#EDEDED' },
-  toggleKnobOn: { transform: [{ translateX: 22 }] },
-  toggleKnobOff: { transform: [{ translateX: 0 }] },
-  boardColor: { color: '#EDEDED', fontSize: 16, fontWeight: 'bold', marginTop: 15, marginBottom: 10, textAlign: 'center' },
-  colorPalate: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 10 },
-  buttonColor1: { width: 40, height: 40, backgroundColor: '#8B5A5A', borderRadius: 20, borderWidth: 2, borderColor: '#B76E79' },
-  buttonColor2: { width: 40, height: 40, backgroundColor: '#A9A9A9', borderRadius: 20, borderWidth: 2, borderColor: '#B76E79' },
-  buttonColor3: { width: 40, height: 40, backgroundColor: '#5F9EA0', borderRadius: 20, borderWidth: 2, borderColor: '#B76E79' },
-  chessboardContainer: { backgroundColor: '#2A2A2A', borderRadius: 15, padding: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 8, width: width * 0.95 },
-  row: { flexDirection: 'row' },
-  square: { width: width * 0.118, height: width * 0.118, alignItems: 'center', justifyContent: 'center', borderRadius: 5 },
-  selectedSquare: { backgroundColor: 'rgba(122, 161, 142, 0.5)', borderWidth: 3, borderColor: 'rgba(0, 255, 85, 0.61)' },
-  validMoveSquare: { borderWidth: 2, borderColor: 'rgba(0, 255, 85, 0.88)' },
-  validMoveDot: { width: width * 0.1, height: width * 0.1, resizeMode: 'contain', position: 'absolute', zIndex: 1 },
-  kingInCheckSquare: { backgroundColor: '#DC143C' },
-  pieceImage: { width: width * 0.105, height: width * 0.105, resizeMode: 'contain', zIndex: 2 },
-  capturedContainer: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#2A2A2A', paddingVertical: 10, paddingHorizontal: 15, marginVertical: 10, borderRadius: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3 },
-  capturedPieces: { flexDirection: 'row', flexWrap: 'wrap', maxWidth: '60%', justifyContent: 'flex-start' },
-  capturedPieceImage: { width: width * 0.06, height: width * 0.06, resizeMode: 'contain', margin: 5 },
-  user: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1C', padding: 8, borderRadius: 10 },
-  userImg: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: '#B76E79', marginRight: 10 },
-  timerText: { fontSize: 18, fontWeight: 'bold', color: '#EDEDED' },
-  modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(15, 15, 15, 0.8)' },
-  modalContent: { width: width * 0.85, backgroundColor: '#2A2A2A', borderRadius: 20, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 10 },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#EDEDED', marginBottom: 20, textAlign: 'center' },
-  promotionOptions: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', paddingHorizontal: 20 },
-  moveHistoryContainer: { marginTop: 20, width: '100%' },
-  moveHistoryTitle: { color: '#EDEDED', fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
-  moveHistory: { maxHeight: 100 },
-  moveText: { color: '#EDEDED', fontSize: 14 },
-  confirmButton: {
-  backgroundColor: '#B76E79',
-  marginRight: 10,
-},
-cancelButton: {
-  backgroundColor: '#4A4A4A',
-},
-modalButtonContainer: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  width: '100%',
-},
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333333',
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1A1A1A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333333',
+  },
+  headerCenter: {
+    alignItems: 'center',
+  },
+  gameMode: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  gameModeSubtext: {
+    color: '#AAAAAA',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  playerSection: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+  },
+  playerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 10,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#333333',
+  },
+  activePlayerCard: {
+    borderColor: '#555555',
+    backgroundColor: '#222222',
+  },
+  playerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  playerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#333333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  playerDetails: {
+    flex: 1,
+  },
+  playerName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  statusText: {
+    color: '#AAAAAA',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  timerContainer: {
+    backgroundColor: '#333333',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+  },
+  timerText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    minWidth: 45,
+    textAlign: 'center',
+  },
+  urgentTimer: {
+    color: '#FF4444',
+  },
+  capturedSection: {
+    backgroundColor: '#0F0F0F',
+    borderRadius: 8,
+    padding: 10,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#333333',
+    minHeight: 50,
+  },
+  capturedLabel: {
+    color: '#AAAAAA',
+    fontSize: 10,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  capturedScrollView: {
+    maxHeight: 30,
+  },
+  capturedScrollContent: {
+    alignItems: 'center',
+    paddingHorizontal: 5,
+  },
+  capturedPieceImage: {
+    width: squareSize * 0.4,
+    height: squareSize * 0.4,
+    resizeMode: 'contain',
+    margin: 2,
+  },
+  noCapturedText: {
+    color: '#666666',
+    fontSize: 10,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 6,
+  },
+  boardSection: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  chessboardContainer: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    padding: 6,
+    borderWidth: 2,
+    borderColor: '#333333',
+  },
+  row: {
+    flexDirection: 'row',
+  },
+  square: {
+    width: squareSize,
+    height: squareSize,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 2,
+  },
+  selectedSquare: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  validMoveSquare: {
+    borderWidth: 2,
+    borderColor: '#AAAAAA',
+  },
+  validMoveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#AAAAAA',
+    position: 'absolute',
+    zIndex: 1,
+  },
+  kingInCheckSquare: {
+    backgroundColor: '#AA0000',
+  },
+  pieceImage: {
+    width: squareSize * 0.9,
+    height: squareSize * 0.9,
+    resizeMode: 'contain',
+    zIndex: 2,
+  },
+  controlPanel: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  undoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333333',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#555555',
+  },
+  undoButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    zIndex: 998,
+  },
+  sidebar: {
+    position: 'absolute',
+    top: 35,
+    right: 0,
+    bottom: 0,
+    width: width * 0.75,
+    maxWidth: 280,
+    backgroundColor: '#0F0F0F',
+    padding: 20,
+    zIndex: 999,
+    borderLeftWidth: 1,
+    borderLeftColor: '#333333',
+  },
+  closeButton: {
+    alignSelf: 'flex-end',
+    padding: 8,
+    marginBottom: 10,
+  },
+  sidebarTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  sectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  sidebarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1A1A1A',
+    padding: 12,
+    borderRadius: 8,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#333333',
+  },
+  sidebarButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  toggleSection: {
+    marginTop: 20,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#333333',
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginVertical: 8,
+  },
+  toggleLabel: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  toggleSwitch: {
+    width: 50,
+    height: 26,
+    borderRadius: 13,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleSwitchOn: {
+    backgroundColor: '#555555',
+  },
+  toggleSwitchOff: {
+    backgroundColor: '#333333',
+  },
+  toggleKnob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+  },
+  toggleKnobOn: {
+    transform: [{ translateX: 24 }],
+  },
+  toggleKnobOff: {
+    transform: [{ translateX: 0 }],
+  },
+  colorSection: {
+    marginTop: 15,
+  },
+  colorPalette: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 8,
+  },
+  colorOption1: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#8B5A5A',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#AAAAAA',
+  },
+  colorOption2: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#A9A9A9',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#AAAAAA',
+  },
+  colorOption3: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#5F9EA0',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#AAAAAA',
+  },
+  historySection: {
+    marginTop: 15,
+    flex: 1,
+  },
+  historyScroll: {
+    maxHeight: 80,
+    marginTop: 8,
+  },
+  historyItem: {
+    backgroundColor: '#1A1A1A',
+    padding: 6,
+    borderRadius: 4,
+    marginVertical: 1,
+  },
+  historyText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+  },
+  noHistoryText: {
+    color: '#666666',
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: width * 0.8,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 15,
+    padding: 25,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333333',
+  },
+  modalTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginVertical: 15,
+    textAlign: 'center',
+  },
+  promotionOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginTop: 10,
+  },
+  promotionOption: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#333333',
+    borderWidth: 1,
+    borderColor: '#555555',
+  },
+  promotionPiece: {
+    width: 40,
+    height: 40,
+    resizeMode: 'contain',
+  },
+  gameOverMessage: {
+    color: '#AAAAAA',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  exitMessage: {
+    color: '#AAAAAA',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-around',
+    marginTop: 10,
+  },
+  modalButton: {
+    backgroundColor: '#333333',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#555555',
+    marginHorizontal: 5,
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
 });

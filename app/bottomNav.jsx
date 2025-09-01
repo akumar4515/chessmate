@@ -1,10 +1,12 @@
 import React from 'react';
-import { View, Image, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Image, TouchableOpacity, StyleSheet, Alert, Dimensions, SafeAreaView } from 'react-native';
 import { useNavigation, usePathname } from 'expo-router';
+
+const { width, height } = Dimensions.get('window');
 
 export default function BottomNav() {
   const navigation = useNavigation();
-  const pathname = usePathname(); // like "/User" or "/"
+  const pathname = usePathname();
 
   const handlePage = (name) => {
     const path = name === 'index' ? '/' : `/${name}`;
@@ -14,44 +16,35 @@ export default function BottomNav() {
   };
 
   return (
-    <View style={styles.footer}>
-      <TouchableOpacity onPress={() => handlePage('index')}>
+    <SafeAreaView style={styles.footer}>
+      <TouchableOpacity onPress={() => handlePage('index')} style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/home.png')}
-          style={[
-            styles.footerIcon,
-            pathname === '/' && styles.activeIcon,
-          ]}
+          style={[styles.footerIcon, pathname === '/' ? styles.activeIcon : null]}
         />
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => handlePage('Friend')}>
+
+      <TouchableOpacity onPress={() => handlePage('Friend')} style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/frnd.png')}
-          style={[
-            styles.footerIcon,
-            pathname === '/Friend' && styles.activeIcon,
-          ]}
+          style={[styles.footerIcon, pathname === '/Friend' ? styles.activeIcon : null]}
         />
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => Alert.alert('Coming Soon')}>
+
+      <TouchableOpacity onPress={() => Alert.alert('Coming Soon')} style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/cart.png')}
-          style={[
-            styles.footerIcon,
-            pathname === '/cart' && styles.activeIcon,
-          ]}
+          style={styles.footerIcon}
         />
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => handlePage('User')}>
+
+      <TouchableOpacity onPress={() => handlePage('User')} style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/user.png')}
-          style={[
-            styles.footerIcon,
-            pathname === '/User' && styles.activeIcon,
-          ]}
+          style={[styles.footerIcon, pathname === '/User' ? styles.activeIcon : null]}
         />
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -60,8 +53,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    backgroundColor: '#2A2A2A',
-    paddingVertical: 12,
+    backgroundColor: '#000000', // Pure black background
+    paddingVertical: Math.max(12, height * 0.015),
+    paddingHorizontal: width * 0.05,
     width: '100%',
     position: 'absolute',
     bottom: 0,
@@ -72,15 +66,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 5,
     elevation: 8,
+    height: 80,
+    borderTopWidth: 1,
+    borderTopColor: '#333333', // Subtle top border
+  },
+  iconButton: {
+    padding: 8,
+    borderRadius: 25,
+    minWidth: Math.min(width * 0.15, 60),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   footerIcon: {
-    width: 48,
-    height: 48,
+    width: Math.min(width * 0.12, 48),
+    height: Math.min(width * 0.12, 48),
     resizeMode: 'contain',
-    tintColor: '#EDEDED',
+    tintColor: '#AAAAAA', // Inactive icons in light gray
   },
   activeIcon: {
-    tintColor: '#B76E79',
+    tintColor: '#FFFFFF', // Active icon in white
   },
 });
-
