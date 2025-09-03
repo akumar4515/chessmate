@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Text,
   View,
@@ -34,7 +34,34 @@ export default function AuthPage() {
   const [editFormData, setEditFormData] = useState({ username: '', email: '' });
   const [profilePic, setProfilePic] = useState(null);
 
+  // ADDED: Message timeout ref for 3-second auto-dismiss
+  const messageTimeoutRef = useRef(null);
+
   const API_URL = 'https://chessmate-backend-lfxo.onrender.com/api';
+
+  // ADDED: showMessage function with 3-second auto-dismiss
+  const showMessage = (message, type) => {
+    // Clear any existing timeout
+    if (messageTimeoutRef.current) {
+      clearTimeout(messageTimeoutRef.current);
+    }
+
+    // Set the appropriate message
+    if (type === 'error') {
+      setError(message);
+      setSuccessMessage('');
+    } else {
+      setSuccessMessage(message);
+      setError('');
+    }
+
+    // Set new timeout for 3 seconds
+    messageTimeoutRef.current = setTimeout(() => {
+      setError('');
+      setSuccessMessage('');
+      messageTimeoutRef.current = null;
+    }, 3000);
+  };
 
   // Check authentication on mount
   useEffect(() => {
@@ -43,13 +70,11 @@ export default function AuthPage() {
         setLoading(true);
         const token = await AsyncStorage.getItem('token');
         const userData = await AsyncStorage.getItem('user');
-        
         if (token && userData) {
           const parsedUser = JSON.parse(userData);
           const response = await axios.get(`${API_URL}/verify-token`, {
             headers: { Authorization: `Bearer ${token}` },
           });
-          
           if (response.data.valid && !parsedUser.guest) {
             const userResponse = await axios.get(`${API_URL}/user`, {
               headers: { Authorization: `Bearer ${token}` },
@@ -69,13 +94,23 @@ export default function AuthPage() {
         }
       } catch (err) {
         console.error('AsyncStorage or token verification error:', err);
-        setError('Failed to load user data');
+        showMessage('Failed to load user data', 'error');
         setUser(null);
       } finally {
         setLoading(false);
       }
     };
+
     checkAuth();
+  }, []);
+
+  // ADDED: Cleanup timeout on component unmount
+  useEffect(() => {
+    return () => {
+      if (messageTimeoutRef.current) {
+        clearTimeout(messageTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Handle back button press
@@ -85,9 +120,9 @@ export default function AuthPage() {
         BackHandler.exitApp();
         return true;
       }
-      
+
       setBackPressedOnce(true);
-      setError('Press again to exit the app');
+      showMessage('Press again to exit the app', 'error');
       setTimeout(() => setBackPressedOnce(false), 2000);
       return true;
     };
@@ -99,15 +134,25 @@ export default function AuthPage() {
   // Handle input changes for login/signup form
   const handleInputChange = (field, value) => {
     setFormData({ ...formData, [field]: value });
+    // Clear messages immediately for input changes
     setError('');
     setSuccessMessage('');
+    if (messageTimeoutRef.current) {
+      clearTimeout(messageTimeoutRef.current);
+      messageTimeoutRef.current = null;
+    }
   };
 
   // Handle input changes for edit form
   const handleEditInputChange = (field, value) => {
     setEditFormData({ ...editFormData, [field]: value });
+    // Clear messages immediately for input changes
     setError('');
     setSuccessMessage('');
+    if (messageTimeoutRef.current) {
+      clearTimeout(messageTimeoutRef.current);
+      messageTimeoutRef.current = null;
+    }
   };
 
   // Validate login/signup form
@@ -117,28 +162,28 @@ export default function AuthPage() {
 
     if (formType === 'login') {
       if (!email.trim() || !password.trim()) {
-        setError('Please fill in all fields');
+        showMessage('Please fill in all fields', 'error');
         return false;
       }
       if (!emailRegex.test(email)) {
-        setError('Invalid email format');
+        showMessage('Invalid email format', 'error');
         return false;
       }
     } else {
       if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
-        setError('Please fill in all fields');
+        showMessage('Please fill in all fields', 'error');
         return false;
       }
       if (!emailRegex.test(email)) {
-        setError('Invalid email format');
+        showMessage('Invalid email format', 'error');
         return false;
       }
       if (password.length < 6) {
-        setError('Password must be at least 6 characters');
+        showMessage('Password must be at least 6 characters', 'error');
         return false;
       }
       if (password !== confirmPassword) {
-        setError('Passwords do not match');
+        showMessage('Passwords do not match', 'error');
         return false;
       }
     }
@@ -151,11 +196,11 @@ export default function AuthPage() {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!username.trim() || !email.trim()) {
-      setError('Please fill in all fields');
+      showMessage('Please fill in all fields', 'error');
       return false;
     }
     if (!emailRegex.test(email)) {
-      setError('Invalid email format');
+      showMessage('Invalid email format', 'error');
       return false;
     }
     return true;
@@ -164,7 +209,7 @@ export default function AuthPage() {
   // Handle login/signup submission
   const handleSubmit = async () => {
     if (!validateForm()) return;
-    
+
     setLoading(true);
     try {
       const endpoint = formType === 'login' ? `${API_URL}/login` : `${API_URL}/signup`;
@@ -175,7 +220,7 @@ export default function AuthPage() {
       const response = await axios.post(endpoint, payload);
 
       if (formType === 'signup') {
-        setSuccessMessage('Account created successfully! Please login.');
+        showMessage('Account created successfully! Please login.', 'success');
         setFormType('login');
         setFormData({ username: '', email: '', password: '', confirmPassword: '' });
       } else {
@@ -185,11 +230,11 @@ export default function AuthPage() {
         setEditFormData({ username: response.data.user.username || '', email: response.data.user.email || '' });
         setProfilePic(response.data.user.profilePic || null);
         setFormData({ username: '', email: '', password: '', confirmPassword: '' });
-        setSuccessMessage('Welcome back!');
+        showMessage('Welcome back!', 'success');
       }
     } catch (err) {
       console.error(`${formType} error:`, err);
-      setError(err.response?.data?.message || 'Something went wrong. Please try again.');
+      showMessage(err.response?.data?.message || 'Something went wrong. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -202,7 +247,7 @@ export default function AuthPage() {
       setUser({ guest: true, username: 'Guest' });
     } catch (err) {
       console.error('Guest navigation error:', err);
-      setError('Navigation failed, please try again');
+      showMessage('Navigation failed, please try again', 'error');
     }
   };
 
@@ -212,13 +257,18 @@ export default function AuthPage() {
       await AsyncStorage.removeItem('user');
       await AsyncStorage.removeItem('token');
       setUser(null);
+      // Clear messages immediately on successful logout
+      if (messageTimeoutRef.current) {
+        clearTimeout(messageTimeoutRef.current);
+        messageTimeoutRef.current = null;
+      }
       setError('');
       setSuccessMessage('');
       setEditMode(false);
       setProfilePic(null);
     } catch (err) {
       console.error('Logout error:', err);
-      setError('Failed to logout, please try again');
+      showMessage('Failed to logout, please try again', 'error');
     }
   };
 
@@ -237,11 +287,11 @@ export default function AuthPage() {
 
       setUser(response.data.user);
       await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
-      setSuccessMessage('Profile updated successfully');
+      showMessage('Profile updated successfully', 'success');
       setEditMode(false);
     } catch (err) {
       console.error('Update error:', err);
-      setError(err.response?.data?.message || 'Failed to update profile');
+      showMessage(err.response?.data?.message || 'Failed to update profile', 'error');
     } finally {
       setLoading(false);
     }
@@ -251,7 +301,7 @@ export default function AuthPage() {
   const handleChangeProfilePic = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setError('Permission to access media library denied');
+      showMessage('Permission to access media library denied', 'error');
       return;
     }
 
@@ -283,10 +333,10 @@ export default function AuthPage() {
         setProfilePic(response.data.profilePic);
         setUser((prev) => ({ ...prev, profilePic: response.data.profilePic }));
         await AsyncStorage.setItem('user', JSON.stringify({ ...user, profilePic: response.data.profilePic }));
-        setSuccessMessage('Profile picture updated successfully');
+        showMessage('Profile picture updated successfully', 'success');
       } catch (err) {
         console.error('Profile picture upload error:', err);
-        setError('Failed to update profile picture');
+        showMessage('Failed to update profile picture', 'error');
       } finally {
         setLoading(false);
       }
@@ -304,7 +354,10 @@ export default function AuthPage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView style={styles.keyboardAvoidingView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView 
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         {/* Fixed Header */}
         <View style={styles.header}>
           <Text style={styles.appTitle}>ChessMate</Text>
@@ -328,10 +381,15 @@ export default function AuthPage() {
           <>
             {/* Fixed Navigation Header for Profile */}
             <View style={styles.profileHeader}>
-              <TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('index')}>
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => navigation.navigate('index')}
+              >
                 <Text style={styles.backButtonText}>← Back</Text>
               </TouchableOpacity>
+
               <Text style={styles.profileTitle}>My Account</Text>
+
               <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
                 <Text style={styles.logoutButtonText}>Logout</Text>
               </TouchableOpacity>
@@ -344,7 +402,7 @@ export default function AuthPage() {
                 <View style={styles.profilePicSection}>
                   <View style={styles.profilePicContainer}>
                     {profilePic ? (
-                      <Image source={{ uri: profilePic }} style={styles.profilePic} />
+                      <Image source={{ uri: `${API_URL}${profilePic}` }} style={styles.profilePic} />
                     ) : (
                       <View style={styles.placeholderPic}>
                         <Text style={styles.placeholderText}>
@@ -353,100 +411,111 @@ export default function AuthPage() {
                       </View>
                     )}
                   </View>
-                  <TouchableOpacity style={styles.changePicButton} onPress={handleChangeProfilePic}>
-                    <Text style={styles.changePicText}>Change Profile Picture</Text>
+                  <TouchableOpacity  >
+                    <Text style={styles.changePicText}>{user.username?.toUpperCase()}</Text>
                   </TouchableOpacity>
                 </View>
               )}
 
               {/* User Information */}
-              {user.guest ? (
-                <View style={styles.guestInfo}>
-                  <Text style={styles.guestTitle}>👤 Guest User</Text>
-                  <Text style={styles.guestSubtext}>Playing as guest with limited features</Text>
-                </View>
-              ) : editMode ? (
-                /* Edit Mode */
-                <View style={styles.editContainer}>
-                  <Text style={styles.sectionTitle}>✏️ Edit Profile</Text>
-                  
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Username</Text>
-                    <TextInput
-                      style={styles.modernInput}
-                      value={editFormData.username}
-                      onChangeText={(v) => handleEditInputChange('username', v)}
-                      autoCapitalize="none"
-                    />
+              <View style={styles.userInfoContainer}>
+                {user.guest ? (
+                  <View style={styles.guestInfo}>
+                    <Text style={styles.guestTitle}>👤 Guest User</Text>
+                    <Text style={styles.guestSubtext}>Playing as guest with limited features</Text>
                   </View>
+                ) : editMode ? (
+                  /* Edit Mode */
+                  <View style={styles.editContainer}>
+                    <Text style={styles.sectionTitle}>✏️ Edit Profile</Text>
 
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Email</Text>
-                    <TextInput
-                      style={styles.modernInput}
-                      value={editFormData.email}
-                      onChangeText={(v) => handleEditInputChange('email', v)}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                    />
-                  </View>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>Username</Text>
+                      <TextInput
+                        style={styles.modernInput}
+                        value={editFormData.username}
+                        onChangeText={(v) => handleEditInputChange('username', v)}
+                        placeholder="Enter username"
+                        placeholderTextColor="#888"
+                        autoCapitalize="none"
+                      />
+                    </View>
 
-                  <View style={styles.editActions}>
-                    {loading ? (
-                      <ActivityIndicator size="large" color="#AAAAAA" />
-                    ) : (
-                      <TouchableOpacity style={[styles.solidButton, styles.saveButton]} onPress={handleUpdate}>
-                        <Text style={styles.saveButtonText}>💾 Save Changes</Text>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>Email</Text>
+                      <TextInput
+                        style={styles.modernInput}
+                        value={editFormData.email}
+                        onChangeText={(v) => handleEditInputChange('email', v)}
+                        placeholder="Enter email"
+                        placeholderTextColor="#888"
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                      />
+                    </View>
+
+                    <View style={styles.editActions}>
+                      {loading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <TouchableOpacity style={[styles.solidButton, styles.saveButton]} onPress={handleUpdate}>
+                            <Text style={styles.saveButtonText}>💾 Save Changes</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+
+                      <TouchableOpacity style={styles.cancelButton} onPress={() => setEditMode(false)}>
+                        <Text style={styles.cancelButtonText}>❌ Cancel</Text>
                       </TouchableOpacity>
-                    )}
-                    
-                    <TouchableOpacity style={styles.cancelButton} onPress={() => setEditMode(false)}>
-                      <Text style={styles.cancelButtonText}>❌ Cancel</Text>
+                    </View>
+                  </View>
+                ) : (
+                  /* Display Mode */
+                  <View style={styles.displayContainer}>
+                    <Text style={styles.sectionTitle}>📋 Profile Information</Text>
+
+                    <View style={styles.infoCard}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>👤 Username:</Text>
+                        <Text style={styles.infoValue}>{user?.username || 'N/A'}</Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>📧 Email:</Text>
+                        <Text style={styles.infoValue}>{user?.email || 'N/A'}</Text>
+                      </View>
+                    </View>
+
+                    {/* Game Statistics */}
+                    <View style={styles.statsCard}>
+                      <Text style={styles.statsTitle}>🎮 Game Statistics</Text>
+                      <View style={styles.statsGrid}>
+                        <View style={styles.statItem}>
+                          <Text style={styles.statNumber}>{user?.matchesPlayed || 0}</Text>
+                          <Text style={styles.statLabel}>Games Played</Text>
+                        </View>
+                        <View style={styles.statItem}>
+                          <Text style={styles.statNumber}>{user?.matchesWon || 0}</Text>
+                          <Text style={styles.statLabel}>Games Won</Text>
+                        </View>
+                        <View style={styles.statItem}>
+                          <Text style={styles.statNumber}>
+                            {user?.matchesPlayed > 0 ? Math.round((user?.matchesWon / user?.matchesPlayed) * 100) : 0}%
+                          </Text>
+                          <Text style={styles.statLabel}>Win Rate</Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity 
+                      style={[styles.solidButton, styles.editProfileButton]} 
+                      onPress={() => setEditMode(true)}
+                    >
+                      <Text style={styles.editProfileText}>✏️ Edit Profile</Text>
                     </TouchableOpacity>
                   </View>
-                </View>
-              ) : (
-                /* Display Mode */
-                <View style={styles.displayContainer}>
-                  <Text style={styles.sectionTitle}>📋 Profile Information</Text>
-                  
-                  <View style={styles.infoCard}>
-                    <View style={styles.infoItem}>
-                      <Text style={styles.infoLabel}>👤 Username:</Text>
-                      <Text style={styles.infoValue}>{user?.username || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.infoItem}>
-                      <Text style={styles.infoLabel}>📧 Email:</Text>
-                      <Text style={styles.infoValue}>{user?.email || 'N/A'}</Text>
-                    </View>
-                  </View>
-
-                  {/* Game Statistics */}
-                  <View style={styles.statsCard}>
-                    <Text style={styles.statsTitle}>🎮 Game Statistics</Text>
-                    <View style={styles.statsGrid}>
-                      <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>{user?.matchesPlayed || 0}</Text>
-                        <Text style={styles.statLabel}>Games Played</Text>
-                      </View>
-                      <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>{user?.matchesWon || 0}</Text>
-                        <Text style={styles.statLabel}>Games Won</Text>
-                      </View>
-                      <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>
-                          {user?.matchesPlayed > 0 ? Math.round((user?.matchesWon / user?.matchesPlayed) * 100) : 0}%
-                        </Text>
-                        <Text style={styles.statLabel}>Win Rate</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity style={[styles.solidButton, styles.editProfileButton]} onPress={() => setEditMode(true)}>
-                    <Text style={styles.editProfileText}>✏️ Edit Profile</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                )}
+              </View>
             </ScrollView>
           </>
         ) : (
@@ -457,12 +526,19 @@ export default function AuthPage() {
                 style={[styles.toggleButton, formType === 'login' && styles.toggleButtonActive]}
                 onPress={() => {
                   setFormType('login');
+                  // Clear messages immediately
+                  if (messageTimeoutRef.current) {
+                    clearTimeout(messageTimeoutRef.current);
+                    messageTimeoutRef.current = null;
+                  }
                   setError('');
                   setSuccessMessage('');
                   setFormData({ username: '', email: '', password: '', confirmPassword: '' });
                 }}
               >
-                <Text style={[styles.toggleText, formType === 'login' && styles.toggleTextActive]}>
+                <Text
+                  style={[styles.toggleText, formType === 'login' && styles.toggleTextActive]}
+                >
                   🔐 Login
                 </Text>
               </TouchableOpacity>
@@ -471,12 +547,19 @@ export default function AuthPage() {
                 style={[styles.toggleButton, formType === 'signup' && styles.toggleButtonActive]}
                 onPress={() => {
                   setFormType('signup');
+                  // Clear messages immediately
+                  if (messageTimeoutRef.current) {
+                    clearTimeout(messageTimeoutRef.current);
+                    messageTimeoutRef.current = null;
+                  }
                   setError('');
                   setSuccessMessage('');
                   setFormData({ username: '', email: '', password: '', confirmPassword: '' });
                 }}
               >
-                <Text style={[styles.toggleText, formType === 'signup' && styles.toggleTextActive]}>
+                <Text
+                  style={[styles.toggleText, formType === 'signup' && styles.toggleTextActive]}
+                >
                   📝 Sign Up
                 </Text>
               </TouchableOpacity>
@@ -494,6 +577,8 @@ export default function AuthPage() {
                         style={styles.modernInput}
                         value={formData.username}
                         onChangeText={(v) => handleInputChange('username', v)}
+                        placeholder="Enter your username"
+                        placeholderTextColor="#888"
                         autoCapitalize="none"
                       />
                     </View>
@@ -505,6 +590,8 @@ export default function AuthPage() {
                       style={styles.modernInput}
                       value={formData.email}
                       onChangeText={(v) => handleInputChange('email', v)}
+                      placeholder="Enter your email"
+                      placeholderTextColor="#888"
                       keyboardType="email-address"
                       autoCapitalize="none"
                     />
@@ -516,6 +603,8 @@ export default function AuthPage() {
                       style={styles.modernInput}
                       value={formData.password}
                       onChangeText={(v) => handleInputChange('password', v)}
+                      placeholder="Enter your password"
+                      placeholderTextColor="#888"
                       secureTextEntry
                     />
                   </View>
@@ -527,21 +616,23 @@ export default function AuthPage() {
                         style={styles.modernInput}
                         value={formData.confirmPassword}
                         onChangeText={(v) => handleInputChange('confirmPassword', v)}
+                        placeholder="Confirm your password"
+                        placeholderTextColor="#888"
                         secureTextEntry
                       />
                     </View>
                   )}
 
                   {/* Submit Button */}
-                  {loading ? (
-                    <ActivityIndicator size="large" color="#AAAAAA" />
-                  ) : (
-                    <TouchableOpacity style={[styles.solidButton, styles.submitButton]} onPress={handleSubmit}>
+                  <TouchableOpacity style={[styles.solidButton, styles.submitButton]} onPress={handleSubmit}>
+                    {loading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
                       <Text style={styles.submitText}>
                         {formType === 'login' ? '🚀 Login' : '✨ Create Account'}
                       </Text>
-                    </TouchableOpacity>
-                  )}
+                    )}
+                  </TouchableOpacity>
 
                   {/* Guest Option */}
                   <TouchableOpacity style={styles.guestButton} onPress={handleGuest}>
