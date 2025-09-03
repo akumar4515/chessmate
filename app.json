@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "chessmate",
-    "owner": "akumar2245",
+    "owner": "skynetix_official",
     "platforms": [
       "ios",
       "android",
@@ -44,7 +44,7 @@
         "origin": false
       },
       "eas": {
-        "projectId": "6b8d0714-7c72-44bc-8bf4-c052e549b17b"
+        "projectId": "dca27edb-552b-445d-a13e-89e01ea2b44a"
       }
     },
     "runtimeVersion": "1.0.0",
