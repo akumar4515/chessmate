@@ -42,7 +42,7 @@ export default function SplashScreen() {
 
     // Navigate to main app after 3 seconds
     const timer = setTimeout(() => {
-      navigation.replace('index');
+      navigation.navigate('/');
     }, 3000);
 
     return () => clearTimeout(timer);

@@ -406,7 +406,7 @@ export default function FriendsPageRedesigned() {
       <Image source={{ uri: item.profile_picture }} style={[styles.profilePic, { width: size, height: size, borderRadius: size / 2 }]} />
     ) : (
       <View style={[styles.placeholderPic, { width: size, height: size, borderRadius: size / 2 }]}>
-        <Text style={styles.placeholderText}>{item.username?.toUpperCase() || 'U'}</Text>
+        <Text style={styles.placeholderText}>{item.username[0]?.toUpperCase() || 'U'}</Text>
       </View>
     );
 
@@ -718,7 +718,7 @@ const styles = StyleSheet.create({
   successText: { color: '#4ECDC4' },
   tabContainer: { flexDirection: 'row', marginHorizontal: 20, backgroundColor: '#1C1C1C', borderRadius: 15, padding: 5, marginBottom: 15 },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 10 },
-  activeTab: { backgroundColor: '#2A2A2A' },
+  // activeTab: { backgroundColor: '#2A2A2A' },
   tabText: { color: '#888', fontSize: 12, fontWeight: '600', marginLeft: 5 },
   activeTabText: { color: '#4ECDC4' },
   content: { flex: 1 },

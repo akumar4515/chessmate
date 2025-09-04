@@ -160,7 +160,7 @@ export default function ChessMateHome() {
         </View>
 
         {/* Chess Mid Section */}
-        <View style={[styles.chessmid, { height: availableHeight * 0.10 }]}>
+        <View style={[styles.chessmid, { height: availableHeight * 0.12 }]}>
           <Image
             source={require('../assets/images/home/chessmid.png')}
             style={[styles.chessmidImg, {

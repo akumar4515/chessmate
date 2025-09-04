@@ -1,4 +1,3 @@
-
 import { Stack, usePathname } from 'expo-router';
 import { View, Dimensions, SafeAreaView, StatusBar } from 'react-native';
 import { useEffect, useState } from 'react';
@@ -9,7 +8,7 @@ import BottomNav from './bottomNav.jsx';
 import SplashScreen from './splas-screen.jsx'; // Import splash screen
 
 const { height: screenHeight } = Dimensions.get('window');
-const BOTTOM_NAV_HEIGHT = 30;
+const BOTTOM_NAV_HEIGHT = 80;
 
 export default function Layout() {
   const pathname = usePathname();
@@ -60,18 +59,20 @@ export default function Layout() {
     return <SplashScreen />;
   }
 
-  const shouldShowBottomNav = !['/chess', '/chessAi', '/chessMulti', '/introVideo'].includes(pathname);
-  
-  const availableHeight = shouldShowBottomNav
-    ? dimensions.height - BOTTOM_NAV_HEIGHT - (StatusBar.currentHeight || 0)
-    : dimensions.height;
+  const shouldShowBottomNav =
+    !showSplash &&
+    !['/chess', '/chessAi', '/chessMulti', '/introVideo'].includes(pathname);
+
+  // Instead of shrinking height, pad the bottom so content never sits under BottomNav
+  const contentBottomPadding = shouldShowBottomNav ? BOTTOM_NAV_HEIGHT : 0;
 
   return (
     <MusicProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
         <StatusBar barStyle="light-content" backgroundColor="#000000" />
-        
-        <View style={{ flex: 1, height: availableHeight }}>
+
+        {/* This padding ensures all pages wrap content within the visible area above BottomNav */}
+        <View style={{ flex: 1, paddingBottom: contentBottomPadding }}>
           <Stack
             screenOptions={{
               headerShown: false,
@@ -80,7 +81,7 @@ export default function Layout() {
             }}
           />
         </View>
-        
+
         {shouldShowBottomNav && <BottomNav />}
       </SafeAreaView>
     </MusicProvider>

@@ -2,10 +2,6 @@ import React from 'react';
 import { View, Image, TouchableOpacity, StyleSheet, Alert, Dimensions, SafeAreaView } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 
-
-
-
-
 const { width, height } = Dimensions.get('window');
 
 export default function BottomNav() {
@@ -21,7 +17,7 @@ const pathname = usePathname();
 
   return (
     <SafeAreaView style={styles.footer}>
-      <TouchableOpacity onPress={() => handlePage('index')} style={styles.iconButton}>
+      <TouchableOpacity onPress={() => handlePage('/')} style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/home.png')}
           style={[styles.footerIcon, pathname === '/' ? styles.activeIcon : null]}
@@ -88,6 +84,6 @@ const styles = StyleSheet.create({
     tintColor: '#AAAAAA', // Inactive icons in light gray
   },
   activeIcon: {
-    tintColor: '#FFFFFF', // Active icon in white
+    tintColor: '#77d1e5ff', // Active icon in white
   },
 });

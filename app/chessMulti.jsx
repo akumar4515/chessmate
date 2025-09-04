@@ -16,7 +16,7 @@ import {
   ScrollView,
   BackHandler,
   FlatList,
-  TextInput, // NEW
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,9 +26,10 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import io from 'socket.io-client';
 import { Audio } from 'expo-av';
 
-const { width, height } = Dimensions.get('window');
-const BOARD_SIZE = Math.min(width * 0.9, height * 0.45);
-const SQUARE_SIZE = BOARD_SIZE / 8;
+const { width } = Dimensions.get('window');
+// Match the reference board sizing
+const squareSize = Math.min(width * 0.113, 45);
+const BOARD_COLORS = { light: '#EDEDED', dark: '#8B5A5A' };
 
 const pieceImages = {
   r: require('../assets/images/pieces/black-rook.png'),
@@ -91,10 +92,13 @@ export default function ChessMultiRedesigned() {
   const [blackPlayerId, setBlackPlayerId] = useState(null);
   const [isBoardFlipped, setIsBoardFlipped] = useState(false);
 
-  // chat modal (NEW)
+  // chat modal
   const [chatVisible, setChatVisible] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
+
+  // valid-move highlighting (null = unknown => don't block)
+  const [validMoves, setValidMoves] = useState(null);
 
   // anim
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -135,6 +139,26 @@ export default function ChessMultiRedesigned() {
     ['P','P','P','P','P','P','P','P'],
     ['R','N','B','Q','K','B','N','R'],
   ];
+
+  // helpers for algebraic <-> indices
+  const toAlgebraic = (row, col) => `${String.fromCharCode(97 + col)}${8 - row}`;
+  const fromAlgebraic = (sq) => {
+    if (typeof sq !== 'string' || sq.length !== 2) return null;
+    const file = sq.toLowerCase().charCodeAt(0) - 97; // a->0
+    const rank = 8 - parseInt(sq[1], 10); // '8'->0
+    if (file < 0 || file > 7 || rank < 0 || rank > 7) return null;
+    return { row: rank, col: file };
+  };
+  const sameSquare = (a, b) => a && b && a.row === b.row && a.col === b.col;
+
+  const isValidDest = (row, col) => {
+    // If we don't have a server response, don't block the move.
+    if (validMoves === null) return true;
+    return validMoves.some(m =>
+      (typeof m === 'string' && sameSquare(fromAlgebraic(String(m).toLowerCase()), { row, col })) ||
+      (typeof m === 'object' && m && m.row === row && m.col === col)
+    );
+  };
 
   // sounds
   useEffect(() => {
@@ -374,6 +398,32 @@ export default function ChessMultiRedesigned() {
     if (!isMuted && isRecording) stopRecording();
   };
 
+  // request legal moves from server for selected piece
+  const requestLegalMoves = (row, col) => {
+    try {
+      // unknown until server replies
+      setValidMoves(null);
+      const payload = {
+        gameId: gameState?.gameId,
+        from: { row, col },
+        fromSq: toAlgebraic(row, col),
+      };
+      socketRef.current?.emit('getLegalMoves', payload, (ack) => {
+        if (ack?.ok && Array.isArray(ack.moves)) {
+          // normalize algebraic to lowercase; accept objects as-is
+          const moves = ack.moves.map(m => (typeof m === 'string' ? m.toLowerCase() : m));
+          setValidMoves(moves);
+        } else {
+          // explicit "no moves" -> block destinations
+          setValidMoves([]);
+        }
+      });
+    } catch {
+      // on error, don't block user
+      setValidMoves(null);
+    }
+  };
+
   // socket init
   const initializeSocket = async (token) =>
     new Promise((resolve, reject) => {
@@ -386,7 +436,6 @@ export default function ChessMultiRedesigned() {
         setConnectionStatus('connected');
         playSound(gameStartSound);
         if (isSpectator) {
-          // NEW: ack to detect failures
           socketRef.current.emit('joinAsSpectator', { gameId, friendId }, (res) => {
             if (!res?.ok) {
               showErrorMessage(res?.error || 'Failed to join as spectator');
@@ -422,6 +471,8 @@ export default function ChessMultiRedesigned() {
         setIsBoardFlipped(false);
         if (data.capturedPieces) setCapturedPieces(data.capturedPieces);
         loadPlayersById(data.whitePlayerId, data.blackPlayerId).catch(() => {});
+        setSelectedSquare(null);
+        setValidMoves(null);
       });
 
       socketRef.current.on('gameStarted', (data) => {
@@ -430,6 +481,8 @@ export default function ChessMultiRedesigned() {
         setGameState((prev) => ({ ...prev, board: data.board, turn: data.turn, status: 'ongoing' }));
         setCurrentTurn(data.turn);
         playSound(gameStartSound);
+        setSelectedSquare(null);
+        setValidMoves(null);
         if (isSpectator) {
           loadPlayersById(data.whitePlayerId, data.blackPlayerId).catch(() => {});
         } else if (mode !== 'unlimited') {
@@ -442,11 +495,15 @@ export default function ChessMultiRedesigned() {
         setCurrentTurn(data.turn);
         if (data.moveHistory) setMoves(data.moveHistory.map((m) => m.san));
         if (data.capturedPieces) setCapturedPieces(data.capturedPieces);
+        setSelectedSquare(null);
+        setValidMoves(null);
       });
 
       socketRef.current.on('gameUpdate', (data) => {
         setGameState((p) => ({ ...p, board: data.board, turn: data.turn, status: data.status }));
         setCurrentTurn(data.turn);
+        setSelectedSquare(null);
+        setValidMoves(null);
         if (data.lastMove?.san) setMoves((prev) => [...prev, data.lastMove.san]);
         if (data.lastMove) {
           if (data.lastMove.captured) {
@@ -474,23 +531,26 @@ export default function ChessMultiRedesigned() {
       socketRef.current.on('connect_error', (err) => {
         setConnectionStatus('error');
         showErrorMessage('Failed to connect to game server. Please try again.');
+        setValidMoves(null);
         reject(err);
       });
 
       socketRef.current.on('error', (data) => {
         showErrorMessage(data.message || 'Game error occurred');
         shakeAnimation();
+        setValidMoves(null);
       });
 
       setTimeout(() => {
         if (socketRef.current && !socketRef.current.connected) {
           setConnectionStatus('timeout');
           showErrorMessage('Connection timeout. Please check your internet connection.');
+          setValidMoves(null);
           reject(new Error('Connection timeout'));
         }
       }, 10000);
 
-      // chat live listener (NEW)
+      // chat live listener
       socketRef.current.on('chatMessage', (m) => {
         if (!friendId || !uid) return;
         if (m.senderId === uid || m.senderId === friendId) {
@@ -617,13 +677,26 @@ export default function ChessMultiRedesigned() {
     if (isSpectator) return;
     const isUserTurn = currentTurn === userColor;
     if (!isUserTurn) { shakeAnimation(); return; }
+
     if (!selectedSquare) {
       if (gameState.board[row][col] && isUserPiece(row, col)) {
         setSelectedSquare({ row, col });
+        requestLegalMoves(row, col);
       }
     } else {
       if (selectedSquare.row === row && selectedSquare.col === col) {
         setSelectedSquare(null);
+        setValidMoves(null);
+        return;
+      }
+      // If target is not legal, allow switching to another of your pieces
+      if (!isValidDest(row, col)) {
+        if (gameState.board[row][col] && isUserPiece(row, col)) {
+          setSelectedSquare({ row, col });
+          requestLegalMoves(row, col);
+        } else {
+          shakeAnimation();
+        }
         return;
       }
       try {
@@ -634,6 +707,7 @@ export default function ChessMultiRedesigned() {
           userId: uid,
         });
         setSelectedSquare(null);
+        setValidMoves(null);
       } catch {
         showErrorMessage('Failed to send move. Please try again.');
         shakeAnimation();
@@ -642,50 +716,50 @@ export default function ChessMultiRedesigned() {
   };
 
   const renderSquare = (row, col) => {
-    const isDark = (row + col) % 2 === 1;
     const piece = gameState?.board?.[row]?.[col] || '';
     const isSelected = selectedSquare && selectedSquare.row === row && selectedSquare.col === col;
     const isUserPieceHighlight = piece && isUserPiece(row, col);
+    const isLight = (row + col) % 2 === 0;
+    const showValidDot = !piece && validMoves !== null && isValidDest(row, col);
     return (
       <TouchableOpacity
         key={`${row}-${col}`}
         onPress={() => handleSquarePress(row, col)}
         disabled={loading || gameState?.status !== 'ongoing' || isSpectator}
-        activeOpacity={0.7}
+        activeOpacity={0.8}
         style={[
           styles.square,
-          {
-            backgroundColor: isDark ? '#8B4513' : '#F5DEB3',
-            borderWidth: isSelected ? 3 : isUserPieceHighlight ? 2 : 0,
-            borderColor: isSelected ? '#FFD700' : isUserPieceHighlight ? '#32CD32' : 'transparent',
-          },
+          { backgroundColor: isLight ? BOARD_COLORS.light : BOARD_COLORS.dark },
+          isSelected && styles.selectedSquare,
+          isUserPieceHighlight && styles.userPieceOutline,
         ]}
       >
-        {piece ? <Image source={pieceImages[piece]} style={styles.piece} resizeMode="contain" /> : null}
+        {showValidDot && <View style={styles.validMoveDot} />}
+        {piece ? <Image source={pieceImages[piece]} style={styles.pieceImage} resizeMode="contain" /> : null}
       </TouchableOpacity>
     );
   };
 
   const renderBoard = () => {
-    const board = [];
+    const nodes = [];
     const boardToRender = isBoardFlipped
       ? gameState?.board?.slice().reverse().map((r) => r.slice().reverse())
       : gameState?.board;
     if (!boardToRender) return null;
     for (let row = 0; row < 8; row++) {
       const rowSquares = [];
-      for (let col = 0; col < 8; col++) {
+      for (let col = 0; col <= 7; col++) {
         const actualRow = isBoardFlipped ? 7 - row : row;
         const actualCol = isBoardFlipped ? 7 - col : col;
         rowSquares.push(renderSquare(actualRow, actualCol));
       }
-      board.push(
+      nodes.push(
         <View key={`row-${row}`} style={styles.boardRow}>
           {rowSquares}
         </View>
       );
     }
-    return board;
+    return nodes;
   };
 
   const renderCapturedPieces = (pieces, label) => {
@@ -709,7 +783,7 @@ export default function ChessMultiRedesigned() {
     const validColorLabel = colorLabel === 'white' || colorLabel === 'black' ? colorLabel : 'unknown';
     const isPlayerTurn = currentTurn === validColorLabel;
     const displayName = playerLike?.username || spectatorFriendName || (validColorLabel === 'white' ? 'White' : validColorLabel === 'black' ? 'Black' : 'Unknown');
-    const initial = displayName?.toUpperCase() || validColorLabel?.toUpperCase() || 'U';
+    const initial = displayName[0]?.toUpperCase() || validColorLabel?.toUpperCase() || 'U';
     const isCurrentPlayer = (validColorLabel === userColor);
     const isFriendTalking = friendIsTalking && !isCurrentPlayer;
     return (
@@ -755,7 +829,7 @@ export default function ChessMultiRedesigned() {
     );
   };
 
-  // chat handlers (NEW)
+  // chat handlers
   const openInGameChat = async () => {
     try {
       setChatVisible(true);
@@ -838,7 +912,7 @@ export default function ChessMultiRedesigned() {
           <TouchableOpacity onPress={() => setShowMoves(!showMoves)} style={styles.movesButton}>
             <Feather name="list" size={18} color="#EDEDED" />
           </TouchableOpacity>
-          {/* Chat button (NEW) */}
+          {/* Chat button */}
           {!isSpectator && (
             <TouchableOpacity onPress={openInGameChat} style={styles.movesButton}>
               <Feather name="message-circle" size={18} color="#EDEDED" />
@@ -853,11 +927,13 @@ export default function ChessMultiRedesigned() {
       {/* Top captured */}
       {renderCapturedPieces(topCaptured, `Captured by ${isSpectator ? 'White' : (userColor === 'white' ? 'You' : 'Opponent')}`)}
 
-      {/* Board */}
-      <View style={styles.boardContainer}>
-        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }, { scale: scaleAnim }] }}>
-          {renderBoard()}
-        </Animated.View>
+      {/* Board (styled like reference) */}
+      <View style={styles.boardSection}>
+        <View style={styles.chessboardContainer}>
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }, { scale: scaleAnim }] }}>
+            {renderBoard()}
+          </Animated.View>
+        </View>
       </View>
 
       {/* Bottom captured */}
@@ -912,7 +988,7 @@ export default function ChessMultiRedesigned() {
         </View>
       </Modal>
 
-      {/* Chat modal (NEW) */}
+      {/* Chat modal */}
       <Modal visible={chatVisible} transparent animationType="fade" onRequestClose={closeInGameChat}>
         <View style={styles.modalOverlay}>
           <View style={styles.movesModal}>
@@ -994,10 +1070,15 @@ const styles = StyleSheet.create({
   capturedLabel: { color: '#AAAAAA', fontSize: 12, marginBottom: 8, textAlign: 'center' },
   capturedList: { paddingHorizontal: 5 },
   capturedPiece: { width: 24, height: 24, marginHorizontal: 2 },
-  boardContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 10 },
+  // New board visuals (matches reference)
+  boardSection: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 10 },
+  chessboardContainer: { backgroundColor: '#1A1A1A', borderRadius: 12, padding: 6, borderWidth: 2, borderColor: '#333333' },
   boardRow: { flexDirection: 'row' },
-  square: { width: SQUARE_SIZE, height: SQUARE_SIZE, justifyContent: 'center', alignItems: 'center' },
-  piece: { width: SQUARE_SIZE * 0.8, height: SQUARE_SIZE * 0.8 },
+  square: { width: squareSize, height: squareSize, alignItems: 'center', justifyContent: 'center', borderRadius: 2 },
+  selectedSquare: { backgroundColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 2, borderColor: '#FFFFFF' },
+  userPieceOutline: { borderWidth: 2, borderColor: '#AAAAAA' },
+  validMoveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#AAAAAA', position: 'absolute', zIndex: 1 },
+  pieceImage: { width: squareSize * 0.9, height: squareSize * 0.9, resizeMode: 'contain', zIndex: 2 },
   voiceControls: { alignItems: 'center', paddingVertical: 10 },
   pushToTalkButton: { backgroundColor: '#333333', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 25, borderWidth: 1, borderColor: '#555555' },
   recording: { backgroundColor: '#FF6B6B', borderColor: '#FF6B6B' },
