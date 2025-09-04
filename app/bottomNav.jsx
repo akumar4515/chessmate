@@ -1,12 +1,16 @@
 import React from 'react';
 import { View, Image, TouchableOpacity, StyleSheet, Alert, Dimensions, SafeAreaView } from 'react-native';
-import { useNavigation, usePathname } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
+
+
+
+
 
 const { width, height } = Dimensions.get('window');
 
 export default function BottomNav() {
-  const navigation = useNavigation();
-  const pathname = usePathname();
+  const navigation = useRouter();
+const pathname = usePathname();
 
   const handlePage = (name) => {
     const path = name === 'index' ? '/' : `/${name}`;
