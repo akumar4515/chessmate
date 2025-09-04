@@ -1,4 +1,6 @@
 import React, { useEffect, useRef } from 'react';
+import { router } from 'expo-router'; // or: const router = useRouter();
+
 import {
   View,
   Text,
@@ -42,7 +44,7 @@ export default function SplashScreen() {
 
     // Navigate to main app after 3 seconds
     const timer = setTimeout(() => {
-      navigation.replace('index');
+       router.replace('/');
     }, 3000);
 
     return () => clearTimeout(timer);

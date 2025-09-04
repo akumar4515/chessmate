@@ -21,7 +21,7 @@ const pathname = usePathname();
 
   return (
     <SafeAreaView style={styles.footer}>
-      <TouchableOpacity onPress={() => handlePage('index')} style={styles.iconButton}>
+      <TouchableOpacity onPress={() => handlePage('/')} style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/home.png')}
           style={[styles.footerIcon, pathname === '/' ? styles.activeIcon : null]}

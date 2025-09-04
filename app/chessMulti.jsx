@@ -21,7 +21,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import io from 'socket.io-client';
 import { Audio } from 'expo-av';
@@ -427,7 +427,8 @@ export default function ChessMultiRedesigned() {
       socketRef.current.on('gameStarted', (data) => {
         setWhitePlayerId(data.whitePlayerId);
         setBlackPlayerId(data.blackPlayerId);
-        setGameState((prev) => ({ ...prev, board: data.board, turn: data.turn, status: 'ongoing' }));
+     setGameState((prev) => ({ ...prev, board: data.board, turn: data.turn, status: 'ongoing' }));
+
         setCurrentTurn(data.turn);
         playSound(gameStartSound);
         if (isSpectator) {
@@ -438,16 +439,18 @@ export default function ChessMultiRedesigned() {
       });
 
       socketRef.current.on('gameState', (data) => {
-        setGameState((p) => ({ ...p, board: data.board, turn: data.turn, status: data.status }));
+      setGameState((p) => ({ ...p, board: data.board, turn: data.turn, status: data.status }));
+
         setCurrentTurn(data.turn);
         if (data.moveHistory) setMoves(data.moveHistory.map((m) => m.san));
         if (data.capturedPieces) setCapturedPieces(data.capturedPieces);
       });
 
       socketRef.current.on('gameUpdate', (data) => {
-        setGameState((p) => ({ ...p, board: data.board, turn: data.turn, status: data.status }));
-        setCurrentTurn(data.turn);
-        if (data.lastMove?.san) setMoves((prev) => [...prev, data.lastMove.san]);
+      setGameState((p) => ({ ...p, board: data.board, turn: data.turn, status: data.status }));
+setCurrentTurn(data.turn);
+if (data.lastMove?.san) setMoves((prev) => [...prev, data.lastMove.san]);
+
         if (data.lastMove) {
           if (data.lastMove.captured) {
             playSound(captureSound);
@@ -819,7 +822,8 @@ export default function ChessMultiRedesigned() {
           </TouchableOpacity>
         ) : (
           <View style={styles.headerButton}>
-            <Feather name="chess" size={18} color="#EDEDED" />
+         <FontAwesome5 name="chess" size={24} color="black" />
+
           </View>
         )}
 

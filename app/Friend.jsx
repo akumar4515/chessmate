@@ -194,13 +194,13 @@ export default function FriendsPageRedesigned() {
     });
 
     // NEW: chat live listener
-    socketRef.current.on('chatMessage', (m) => {
-      if (!chatFriend) return;
-      const mine = userIdRef.current;
-      if (m.senderId === chatFriend.id || m.senderId === mine) {
-        setChatMessages((prev) => [...prev, m]);
-      }
-    });
+ socketRef.current.on('chatMessage', (m) => {
+  if (!chatFriend) return;
+  const mine = userIdRef.current;
+  if (m.senderId === chatFriend.id || m.senderId === mine) {
+    setChatMessages((prev) => [...prev, m]);  // ✅
+  }
+});
 
     // optional badge event
     socketRef.current.on('chatBadge', ({ fromUserId }) => {
@@ -381,7 +381,7 @@ export default function FriendsPageRedesigned() {
       timestamp: new Date().toISOString(),
       senderUsername: user?.username,
     };
-    setChatMessages((prev) => [...prev, optimistic]);
+setChatMessages((prev) => [...prev, optimistic]); // ✅
     socketRef.current?.emit('sendChat', { toUserId: chatFriend.id, message: chatInput.trim(), tempId }, (ack) => {
       if (!ack?.ok) showMessage(ack?.error || 'Send failed', 'error');
     });
