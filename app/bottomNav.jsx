@@ -3,6 +3,7 @@ import { View, Image, TouchableOpacity, StyleSheet, Alert, Dimensions, SafeAreaV
 import { useRouter, usePathname } from 'expo-router';
 
 const { width, height } = Dimensions.get('window');
+import { playClick } from "./utils/ClickSound";
 
 export default function BottomNav() {
   const navigation = useRouter();
@@ -17,28 +18,28 @@ const pathname = usePathname();
 
   return (
     <SafeAreaView style={styles.footer}>
-      <TouchableOpacity onPress={() => handlePage('/')} style={styles.iconButton}>
+      <TouchableOpacity onPress={() =>{playClick(),handlePage('/')} } style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/home.png')}
           style={[styles.footerIcon, pathname === '/' ? styles.activeIcon : null]}
         />
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => handlePage('Friend')} style={styles.iconButton}>
+      <TouchableOpacity onPress={() =>{playClick(), handlePage('Friend')}} style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/frnd.png')}
           style={[styles.footerIcon, pathname === '/Friend' ? styles.activeIcon : null]}
         />
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => Alert.alert('Coming Soon')} style={styles.iconButton}>
+      <TouchableOpacity onPress={() =>{playClick(), Alert.alert('Coming Soon')}} style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/cart.png')}
           style={styles.footerIcon}
         />
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => handlePage('User')} style={styles.iconButton}>
+      <TouchableOpacity onPress={() =>{playClick(), handlePage('User')}} style={styles.iconButton}>
         <Image
           source={require('../assets/images/home/user.png')}
           style={[styles.footerIcon, pathname === '/User' ? styles.activeIcon : null]}

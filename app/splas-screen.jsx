@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { playClick } from './utils/ClickSound';
 
 const { width, height } = Dimensions.get('window');
 

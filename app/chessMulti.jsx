@@ -24,7 +24,8 @@ import axios from 'axios';
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import io from 'socket.io-client';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import { playClick } from './utils/ClickSound';
 
 const { width } = Dimensions.get('window');
 // Match the reference board sizing
@@ -167,36 +168,26 @@ export default function ChessMultiRedesigned() {
   }, []);
 
   const loadSounds = async () => {
-    try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        staysActiveInBackground: false,
-        interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
-        playThroughEarpieceAndroid: false,
-      });
-      const soundPromises = [
-        Audio.Sound.createAsync(require('../assets/sounds/move.mp3'), { volume: 0.7 }),
-        Audio.Sound.createAsync(require('../assets/sounds/capture.mp3'), { volume: 0.8 }),
-        Audio.Sound.createAsync(require('../assets/sounds/castle.mp3'), { volume: 0.7 }),
-        Audio.Sound.createAsync(require('../assets/sounds/move-check.mp3'), { volume: 0.9 }),
-        Audio.Sound.createAsync(require('../assets/sounds/game-start.mp3'), { volume: 0.6 }),
-        Audio.Sound.createAsync(require('../assets/sounds/game-end.mp3'), { volume: 0.8 }),
-      ];
-      const results = await Promise.allSettled(soundPromises);
-      const [move, capture, castle, check, gameStart, gameEnd] = results.map(r => (r.status === 'fulfilled' ? r.value.sound : null));
-      setMoveSound(move);
-      setCaptureSound(capture);
-      setCastleSound(castle);
-      setCheckSound(check);
-      setGameStartSound(gameStart);
-      setGameEndSound(gameEnd);
-    } catch (e) {
-      // ignore
-    }
-  };
+  try {
+    const soundPromises = [
+      Audio.Sound.createAsync(require('../assets/sounds/move.mp3'), { volume: 0.7 }),
+      Audio.Sound.createAsync(require('../assets/sounds/capture.mp3'), { volume: 0.8 }),
+      Audio.Sound.createAsync(require('../assets/sounds/castle.mp3'), { volume: 0.7 }),
+      Audio.Sound.createAsync(require('../assets/sounds/move-check.mp3'), { volume: 0.9 }),
+      Audio.Sound.createAsync(require('../assets/sounds/game-start.mp3'), { volume: 0.6 }),
+      Audio.Sound.createAsync(require('../assets/sounds/game-end.mp3'), { volume: 0.8 }),
+    ];
+    const results = await Promise.allSettled(soundPromises);
+    const [move, capture, castle, check, gameStart, gameEnd] =
+      results.map(r => (r.status === 'fulfilled' ? r.value.sound : null));
+    setMoveSound(move);
+    setCaptureSound(capture);
+    setCastleSound(castle);
+    setCheckSound(check);
+    setGameStartSound(gameStart);
+    setGameEndSound(gameEnd);
+  } catch {}
+};
 
   const unloadSounds = async () => {
     await Promise.all([
@@ -209,35 +200,31 @@ export default function ChessMultiRedesigned() {
     ]);
   };
 
-  const playSound = async (sound) => {
-    if (!sound) return;
-    try {
-      const status = await sound.getStatusAsync();
-      if (status.isLoaded) {
-        await sound.setPositionAsync(0);
-        await sound.playAsync();
-      }
-    } catch {}
-  };
+ const playSound = async (sound) => {
+  if (!sound) return;
+  try {
+    await sound.replayAsync();
+  } catch {}
+};
 
   // voice permission
   useEffect(() => { setupAudioPermissions(); }, []);
   const setupAudioPermissions = async () => {
-    try {
-      const permission = await Audio.requestPermissionsAsync();
-      setAudioPermission(permission.granted);
-      if (permission.granted) {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-          interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DUCK_OTHERS,
-          shouldDuckAndroid: true,
-          interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DUCK_OTHERS,
-          playThroughEarpieceAndroid: false,
-        });
-      }
-    } catch {}
-  };
+  try {
+    const permission = await Audio.requestPermissionsAsync();
+    setAudioPermission(permission.granted);
+    if (permission.granted) {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+    }
+  } catch {}
+};
 
   useEffect(() => {
     Animated.parallel([
@@ -450,17 +437,22 @@ export default function ChessMultiRedesigned() {
       });
 
       // voice rx
-      socketRef.current.on('voiceMessage', async (data) => {
-        if (data.senderId !== uid && !isSpectator) {
-          setFriendIsTalking(true);
-          try {
-            const sound = new Audio.Sound();
-            await sound.loadAsync({ uri: data.audioUri });
-            await sound.playAsync();
-            setTimeout(() => setFriendIsTalking(false), 2000);
-          } catch {}
+     socketRef.current.on('voiceMessage', async (data) => {
+  if (data.senderId !== uid && !isSpectator) {
+    setFriendIsTalking(true);
+    try {
+      const sound = new Audio.Sound();
+      await sound.loadAsync({ uri: data.audioUri });
+      await sound.playAsync();
+      sound.setOnPlaybackStatusUpdate((s) => {
+        if (s?.didJustFinish) {
+          sound.unloadAsync().catch(() => {});
+          setFriendIsTalking(false);
         }
       });
+    } catch {}
+  }
+});
 
       // spectator initial sync
       socketRef.current.on('spectatorGameState', (data) => {
@@ -644,7 +636,114 @@ export default function ChessMultiRedesigned() {
     }
     setGameOverMessage(`${reason}. Winner: ${winnerName}`);
     setGameOverModal(true);
+
+    // --- Elo update (spectator-safe) ---
+    try {
+      const resolvedWinnerId = (reason === 'draw' || reason === 'stalemate') ? null : (winnerId ?? null);
+      if (whitePlayerId && blackPlayerId) {
+        updateEloAfterGame(resolvedWinnerId, whitePlayerId, blackPlayerId).catch(() => {});
+      }
+    } catch {}
   };
+
+  // ---------------------- Elo calculation & update (spectator-safe) ----------------------
+  const getKFactor = (rating, gamesPlayed) => {
+    if (gamesPlayed < 20) return 32;
+    if (rating >= 2400) return 10;
+    return 20;
+  };
+
+  const expectedScore = (rating, opponentRating) => 1 / (1 + Math.pow(10, (opponentRating - rating) / 400));
+
+  const computeNewRating = (rating, opponentRating, score, gamesPlayed) => {
+    const K = getKFactor(rating, gamesPlayed);
+    const E = expectedScore(rating, opponentRating);
+    return Math.round(rating + K * (score - E));
+  };
+
+  /**
+   * Update Elo ratings for both players after a game finishes.
+   * - Always attempts to update backend records for both players.
+   * - Does NOT modify the local spectator's user object (if isSpectator === true).
+   *
+   * @param {string|null} winnerId - id of winner, or null for draw
+   * @param {string} whiteId
+   * @param {string} blackId
+   */
+  const updateEloAfterGame = async (winnerId, whiteId, blackId) => {
+    const token = authTokenRef.current;
+    if (!token) return;
+
+    try {
+      // fetch both players from backend
+      const [wRes, bRes] = await Promise.all([
+        axios.get(`${API_URL}/api/users/${whiteId}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
+        axios.get(`${API_URL}/api/users/${blackId}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
+      ]);
+
+      if (!wRes?.data || !bRes?.data) {
+        // can't proceed if we can't fetch both players
+        return;
+      }
+
+      const white = wRes.data;
+      const black = bRes.data;
+
+      const whiteRating = Number(white.elo ?? 1200);
+      const blackRating = Number(black.elo ?? 1200);
+      const whiteGames = Number(white.gamesPlayed ?? 0);
+      const blackGames = Number(black.gamesPlayed ?? 0);
+
+      let whiteScore, blackScore;
+      if (winnerId === null) {
+        whiteScore = 0.5; blackScore = 0.5;
+      } else if (winnerId === whiteId) {
+        whiteScore = 1; blackScore = 0;
+      } else if (winnerId === blackId) {
+        whiteScore = 0; blackScore = 1;
+      } else {
+        return;
+      }
+
+      const newWhiteRating = computeNewRating(whiteRating, blackRating, whiteScore, whiteGames);
+      const newBlackRating = computeNewRating(blackRating, whiteRating, blackScore, blackGames);
+
+      const updatedWhiteGames = whiteGames + 1;
+      const updatedBlackGames = blackGames + 1;
+
+      // patch both users on backend (assumes PATCH /api/users/:id accepts { elo, gamesPlayed })
+      const patchPromises = [
+        axios.patch(`${API_URL}/api/users/${whiteId}`, { elo: newWhiteRating, gamesPlayed: updatedWhiteGames }, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
+        axios.patch(`${API_URL}/api/users/${blackId}`, { elo: newBlackRating, gamesPlayed: updatedBlackGames }, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null),
+      ];
+      await Promise.all(patchPromises);
+
+      // Optimistic local updates — BUT DO NOT update local user if current viewer is a spectator.
+      if (!isSpectator) {
+        if (whiteId === uid) {
+          setUser((u) => u ? { ...u, elo: newWhiteRating, gamesPlayed: updatedWhiteGames } : u);
+        } else if (blackId === uid) {
+          setUser((u) => u ? { ...u, elo: newBlackRating, gamesPlayed: updatedBlackGames } : u);
+        }
+
+        if (whiteId === friendId) {
+          setFriend((f) => f ? { ...f, elo: newWhiteRating, gamesPlayed: updatedWhiteGames } : f);
+        } else if (blackId === friendId) {
+          setFriend((f) => f ? { ...f, elo: newBlackRating, gamesPlayed: updatedBlackGames } : f);
+        }
+      }
+
+      // Update the spectator-visible whitePlayer/blackPlayer objects so spectators see the new ratings
+      // (this doesn't modify the spectator's personal user record)
+      setWhitePlayer((p) => p && p.id === whiteId ? { ...p, elo: newWhiteRating, gamesPlayed: updatedWhiteGames } : p);
+      setBlackPlayer((p) => p && p.id === blackId ? { ...p, elo: newBlackRating, gamesPlayed: updatedBlackGames } : p);
+
+    } catch (err) {
+      // swallow errors — Elo updates must not break game flow
+      // console.warn('Elo update failed', err);
+    }
+  };
+  // ---------------------- end Elo helpers ----------------------
 
   const cleanup = () => {
     if (socketRef.current) socketRef.current.disconnect();
@@ -888,13 +987,13 @@ export default function ChessMultiRedesigned() {
       {/* Header */}
       <View style={styles.header}>
         {isSpectator ? (
-          <TouchableOpacity onPress={() => { socketRef.current?.emit('leaveSpectator', { gameId }); navigation.goBack(); }} style={styles.backButton}>
+          <TouchableOpacity onPress={() => {playClick() ,socketRef.current?.emit('leaveSpectator', { gameId }); navigation.goBack(); }} style={styles.backButton}>
             <Feather name="arrow-left" size={20} color="#EDEDED" />
           </TouchableOpacity>
         ) : (
           <View style={styles.headerButton}>
-  <MaterialCommunityIcons name="chess-king" size={20} color="#EDEDED" />
-</View>
+            <MaterialCommunityIcons name="chess-king" size={20} color="#EDEDED" />
+          </View>
         )}
 
         <View style={styles.headerCenter}>
@@ -904,17 +1003,17 @@ export default function ChessMultiRedesigned() {
 
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {!isSpectator && audioPermission && (
-            <TouchableOpacity onPress={isRecording ? stopRecording : startRecording} style={[styles.voiceChatButton, isRecording && styles.recording]}>
+            <TouchableOpacity onPress={() => { playClick(); isRecording ? stopRecording() : startRecording(); }} style={[styles.voiceChatButton, isRecording && styles.recording]}>
               <Feather name={isRecording ? 'mic-off' : 'mic'} size={18} color="#EDEDED" />
             </TouchableOpacity>
           )}
           {/* Moves modal toggle */}
-          <TouchableOpacity onPress={() => setShowMoves(!showMoves)} style={styles.movesButton}>
+          <TouchableOpacity onPress={() =>{playClick(), setShowMoves(!showMoves)}} style={styles.movesButton}>
             <Feather name="list" size={18} color="#EDEDED" />
           </TouchableOpacity>
           {/* Chat button */}
           {!isSpectator && (
-            <TouchableOpacity onPress={openInGameChat} style={styles.movesButton}>
+            <TouchableOpacity onPress={() =>{playClick(),openInGameChat()}} style={styles.movesButton}>
               <Feather name="message-circle" size={18} color="#EDEDED" />
             </TouchableOpacity>
           )}
@@ -945,7 +1044,7 @@ export default function ChessMultiRedesigned() {
       {/* Voice push-to-talk */}
       {!isSpectator && audioPermission && (
         <View style={styles.voiceControls}>
-          <TouchableOpacity onPress={isRecording ? stopRecording : startRecording} style={[styles.pushToTalkButton, isRecording && styles.recording]}>
+          <TouchableOpacity onPress={() => { playClick(); isRecording ? stopRecording() : startRecording(); }} style={[styles.pushToTalkButton, isRecording && styles.recording]}>
             <Text style={styles.pushToTalkText}>{isRecording ? 'Stop Talk' : 'Push to Talk'}</Text>
           </TouchableOpacity>
         </View>
@@ -954,7 +1053,7 @@ export default function ChessMultiRedesigned() {
       {/* Game controls */}
       {!isSpectator && (
         <View style={styles.gameControls}>
-          <TouchableOpacity onPress={handleForfeit} style={styles.forfeitButton}>
+          <TouchableOpacity onPress={() =>{playClick(),handleForfeit()}} style={styles.forfeitButton}>
             <Text style={styles.forfeitText}>Forfeit</Text>
           </TouchableOpacity>
         </View>
@@ -968,12 +1067,12 @@ export default function ChessMultiRedesigned() {
       ) : null}
 
       {/* Moves modal */}
-      <Modal visible={showMoves} transparent animationType="fade" onRequestClose={() => setShowMoves(false)}>
+      <Modal visible={showMoves} transparent animationType="fade" onRequestClose={() =>{playClick(), setShowMoves(false)}}>
         <View style={styles.modalOverlay}>
           <View style={styles.movesModal}>
             <View style={styles.movesHeader}>
               <Text style={styles.movesTitle}>Move History</Text>
-              <TouchableOpacity onPress={() => setShowMoves(false)}><Feather name="x" size={18} color="#EDEDED" /></TouchableOpacity>
+              <TouchableOpacity onPress={() =>{playClick(), setShowMoves(false)}}><Feather name="x" size={18} color="#EDEDED" /></TouchableOpacity>
             </View>
             <ScrollView style={styles.movesList}>
               {moves.length === 0 ? (
@@ -989,12 +1088,12 @@ export default function ChessMultiRedesigned() {
       </Modal>
 
       {/* Chat modal */}
-      <Modal visible={chatVisible} transparent animationType="fade" onRequestClose={closeInGameChat}>
+      <Modal visible={chatVisible} transparent animationType="fade" onRequestClose={() =>{playClick(),closeInGameChat()}}>
         <View style={styles.modalOverlay}>
           <View style={styles.movesModal}>
             <View style={styles.movesHeader}>
               <Text style={styles.movesTitle}>Chat</Text>
-              <TouchableOpacity onPress={closeInGameChat}><Feather name="x" size={18} color="#EDEDED" /></TouchableOpacity>
+              <TouchableOpacity onPress={() =>{playClick(),closeInGameChat()}}><Feather name="x" size={18} color="#EDEDED" /></TouchableOpacity>
             </View>
             <View style={{ padding: 16, maxHeight: '60%' }}>
               <FlatList
@@ -1015,7 +1114,7 @@ export default function ChessMultiRedesigned() {
                   placeholderTextColor="#777"
                   style={{ flex: 1, color: '#EDEDED', backgroundColor: '#1C1C1C', borderRadius: 10, paddingHorizontal: 12, height: 44 }}
                 />
-                <TouchableOpacity onPress={sendInGameChat} style={{ width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: '#333', borderRadius: 10 }}>
+                <TouchableOpacity onPress={() =>{playClick(),sendInGameChat()}} style={{ width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: '#333', borderRadius: 10 }}>
                   <Feather name="send" size={18} color="#4ECDC4" />
                 </TouchableOpacity>
               </View>
@@ -1025,12 +1124,12 @@ export default function ChessMultiRedesigned() {
       </Modal>
 
       {/* Game Over */}
-      <Modal visible={gameOverModal} transparent animationType="fade" onRequestClose={() => setGameOverModal(false)}>
+      <Modal visible={gameOverModal} transparent animationType="fade" onRequestClose={() =>{playClick(), setGameOverModal(false)}}>
         <View style={styles.modalOverlay}>
           <View style={styles.gameOverModal}>
             <Text style={styles.gameOverTitle}>Game Over</Text>
             <Text style={styles.gameOverMessage}>{gameOverMessage}</Text>
-            <TouchableOpacity onPress={() => { setGameOverModal(false); navigation.goBack(); }} style={styles.gameOverButton}>
+            <TouchableOpacity onPress={() => {playClick(), setGameOverModal(false); navigation.goBack(); }} style={styles.gameOverButton}>
               <Text style={styles.gameOverButtonText}>Exit</Text>
             </TouchableOpacity>
           </View>

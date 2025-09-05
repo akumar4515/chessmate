@@ -10,6 +10,7 @@ import {
   StatusBar 
 } from "react-native";
 import { useNavigation } from '@react-navigation/native';
+import { playClick } from "./utils/ClickSound";
 
 const { width, height } = Dimensions.get('window');
 
@@ -47,7 +48,7 @@ export default function ChessMateHome() {
         <View style={[styles.header, { height: availableHeight * 0.08 }]}>
           <TouchableOpacity
             style={styles.settingsIcon}
-            onPress={() => navigation.navigate('userDetail')}
+            onPress={() =>{playClick(), navigation.navigate('setting')}}
           >
             <Image
               source={require('../assets/images/home/setting.png')}
@@ -91,7 +92,7 @@ export default function ChessMateHome() {
                 height: availableHeight * 0.14,
               }
             ]}
-            onPress={() => setSelectedMode('classic')}
+            onPress={() =>{playClick(), setSelectedMode('classic')}}
           >
             <Image
               source={require('../assets/images/home/classic.png')}
@@ -110,7 +111,7 @@ export default function ChessMateHome() {
                 height: availableHeight * 0.14,
               }
             ]}
-            onPress={() => setSelectedMode('blitz')}
+            onPress={() =>{playClick(),setSelectedMode('blitz')}}
           >
             <Image
               source={require('../assets/images/home/blitz.png')}
@@ -129,7 +130,7 @@ export default function ChessMateHome() {
                 height: availableHeight * 0.14,
               }
             ]}
-            onPress={() => setSelectedMode('unlimited')}
+            onPress={() =>{playClick(), setSelectedMode('unlimited')}}
           >
             <Image
               source={require('../assets/images/home/unlimited.png')}
@@ -148,7 +149,7 @@ export default function ChessMateHome() {
                 height: availableHeight * 0.14,
               }
             ]}
-            onPress={() => setSelectedMode('rush')}
+            onPress={() =>{playClick(), setSelectedMode('rush')}}
           >
             <Image
               source={require('../assets/images/home/rush.png')}
@@ -177,7 +178,7 @@ export default function ChessMateHome() {
         }]}>
           <TouchableOpacity
             style={[styles.option, { height: availableHeight * 0.08 }]}
-            onPress={() => navigation.navigate("chessAi", { mode: selectedMode })}
+            onPress={() =>{playClick(), navigation.navigate("chessAi", { mode: selectedMode })}}
           >
             <Image
               source={require('../assets/images/home/playcom.png')}
@@ -189,7 +190,7 @@ export default function ChessMateHome() {
 
           <TouchableOpacity
             style={[styles.option, { height: availableHeight * 0.08 }]}
-            onPress={() => navigation.navigate("chess", { mode: selectedMode })}
+            onPress={() =>{playClick(), navigation.navigate("chess", { mode: selectedMode })}}
           >
             <Image
               source={require('../assets/images/home/playmulti.png')}
@@ -201,7 +202,7 @@ export default function ChessMateHome() {
 
           <TouchableOpacity
             style={[styles.option, { height: availableHeight * 0.08 }]}
-            onPress={() => navigation.navigate("Friend")}
+            onPress={() =>{playClick(), navigation.navigate("Friend")}}
           >
             <Image
               source={require('../assets/images/home/playon.png')}

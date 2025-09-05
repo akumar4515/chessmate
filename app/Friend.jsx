@@ -22,7 +22,7 @@ import axios from 'axios';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import io from 'socket.io-client';
-
+import { playClick } from './utils/ClickSound';
 const { width } = Dimensions.get('window');
 const API_URL = 'https://chessmate-backend-lfxo.onrender.com';
 
@@ -423,20 +423,20 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
           </View>
           {/* Play/Spectate */}
           {inGame ? (
-            <TouchableOpacity onPress={() => spectateGame(item)} style={styles.spectateButton}>
+            <TouchableOpacity onPress={() =>{playClick(), spectateGame(item)}} style={styles.spectateButton}>
               <LinearGradient colors={['#9B59B6', '#B569C6']} style={styles.spectateButtonGradient}>
                 <Feather name="eye" size={18} color="#fff" />
               </LinearGradient>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity onPress={() => inviteFriendToPlay(item)} style={styles.playButton}>
+            <TouchableOpacity onPress={() =>{playClick(), inviteFriendToPlay(item)}} style={styles.playButton}>
               <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.playButtonGradient}>
                 <Feather name="play" size={18} color="#0F0F0F" />
               </LinearGradient>
             </TouchableOpacity>
           )}
           {/* NEW: Message button */}
-          <TouchableOpacity onPress={() => openChat(item)} style={[styles.addButton, { marginLeft: 8 }]}>
+          <TouchableOpacity onPress={() =>{playClick(), openChat(item)}} style={[styles.addButton, { marginLeft: 8 }]}>
             <Feather name="message-circle" size={18} color="#4ECDC4" />
           </TouchableOpacity>
         </LinearGradient>
@@ -452,7 +452,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
           <Text style={styles.itemName}>{item.username}</Text>
           <Text style={styles.itemSubtext}>{item.email}</Text>
         </View>
-        <TouchableOpacity onPress={() => sendFriendRequest(item.id)} style={styles.addButton}>
+        <TouchableOpacity onPress={() => {playClick(),sendFriendRequest(item.id)}} style={styles.addButton}>
           <Feather name="user-plus" size={18} color="#4ECDC4" />
         </TouchableOpacity>
       </LinearGradient>
@@ -468,10 +468,10 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
           <Text style={styles.itemSubtext}>Wants to be friends</Text>
         </View>
         <View style={styles.actionButtons}>
-          <TouchableOpacity onPress={() => acceptFriendRequest(item.id)} style={[styles.actionButton, styles.acceptButton]}>
+          <TouchableOpacity onPress={() =>{playClick(), acceptFriendRequest(item.id)}} style={[styles.actionButton, styles.acceptButton]}>
             <Feather name="check" size={16} color="#0F0F0F" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => cancelFriendRequest(item.id)} style={[styles.actionButton, styles.declineButton]}>
+          <TouchableOpacity onPress={() =>{playClick(), cancelFriendRequest(item.id)}} style={[styles.actionButton, styles.declineButton]}>
             <Feather name="x" size={16} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -487,7 +487,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
           <Text style={styles.itemName}>{item.username}</Text>
           <Text style={styles.itemSubtext}>Request pending</Text>
         </View>
-        <TouchableOpacity onPress={() => cancelFriendRequest(item.id)} style={styles.cancelButton}>
+        <TouchableOpacity onPress={() =>{playClick(), cancelFriendRequest(item.id)}} style={styles.cancelButton}>
           <Text style={styles.cancelButtonText}>Cancel</Text>
         </TouchableOpacity>
       </LinearGradient>
@@ -495,7 +495,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
   );
 
   const renderTab = (key, label, icon) => (
-    <TouchableOpacity onPress={() => setActiveTab(key)} style={[styles.tab, activeTab === key && styles.activeTab]}>
+    <TouchableOpacity onPress={() =>{playClick(), setActiveTab(key)}} style={[styles.tab, activeTab === key && styles.activeTab]}>
       <Feather name={icon} size={14} color={activeTab === key ? '#4ECDC4' : '#888'} />
       <Text style={[styles.tabText, activeTab === key && styles.activeTabText]}>{label}</Text>
     </TouchableOpacity>
@@ -528,7 +528,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
         <Ionicons name="people-outline" size={64} color="#4ECDC4" />
         <Text style={styles.guestTitle}>Friends Feature</Text>
         <Text style={styles.guestText}>Please log in to connect with friends and play online chess matches.</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('User')} style={styles.loginButton}>
+        <TouchableOpacity onPress={() =>{playClick(), navigation.navigate('User')}} style={styles.loginButton}>
           <LinearGradient colors={['#4ECDC4', '#45B7D1']} style={styles.loginButtonGradient}>
             <Text style={styles.loginButtonText}>Go to Login</Text>
           </LinearGradient>
@@ -554,7 +554,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
             placeholderTextColor="#666"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
+            <TouchableOpacity onPress={() => {playClick(), setSearchQuery(''); setSearchResults([]); }}>
               <Feather name="x" size={16} color="#888" />
             </TouchableOpacity>
           )}
@@ -608,12 +608,12 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Choose Game Mode</Text>
-              <TouchableOpacity onPress={() => setGameModalVisible(false)}><Feather name="x" size={18} color="#EDEDED" /></TouchableOpacity>
+              <TouchableOpacity onPress={() =>{playClick(), setGameModalVisible(false)}}><Feather name="x" size={18} color="#EDEDED" /></TouchableOpacity>
             </View>
             <Text style={styles.modalSubtitle}>Playing against {selectedFriend?.username}</Text>
             <View style={styles.gameModesContainer}>
               {GAME_MODES.map((m) => (
-                <TouchableOpacity key={m.id} onPress={() => sendGameInvite(m.id)} style={styles.gameModeCard}>
+                <TouchableOpacity key={m.id} onPress={() =>{playClick(), sendGameInvite(m.id)}} style={styles.gameModeCard}>
                   <LinearGradient colors={m.gradient} style={styles.gameModeGradient}>
                     <Text style={styles.gameModeIcon}>{m.icon}</Text>
                     <Text style={styles.gameModeName}>{m.name}</Text>
@@ -627,7 +627,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
       </Modal>
 
       {/* Invite Modal */}
-      <Modal visible={inviteModalVisible} transparent animationType="fade" onRequestClose={() => setInviteModalVisible(false)}>
+      <Modal visible={inviteModalVisible} transparent animationType="fade" onRequestClose={() =>{playClick(), setInviteModalVisible(false)}}>
         <View style={styles.modalContainer}>
           <View style={styles.inviteModalContent}>
             {receivedInvite ? (
@@ -636,12 +636,12 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
                 <Text style={styles.inviteTitle}>Game Invitation</Text>
                 <Text style={{ color: '#AAA', marginBottom: 20 }}>{receivedInvite.username} invited you to play {receivedInvite.mode}</Text>
                 <View style={styles.inviteButtons}>
-                  <TouchableOpacity onPress={acceptInvite} style={styles.inviteButton}>
+                  <TouchableOpacity onPress={()=>{playClick(),acceptInvite()}} style={styles.inviteButton}>
                     <LinearGradient colors={['#4ECDC4', '#45B7D1']} style={styles.inviteButtonGradient}>
                       <Text style={styles.inviteButtonText}>Accept</Text>
                     </LinearGradient>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={declineInvite} style={styles.declineInviteButton}>
+                  <TouchableOpacity onPress={()=>{playClick(),declineInvite()}} style={styles.declineInviteButton}>
                     <Text style={styles.declineInviteButtonText}>Decline</Text>
                   </TouchableOpacity>
                 </View>
@@ -651,7 +651,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
                 <Ionicons name="time" size={48} color="#EDEDED" />
                 <Text style={styles.inviteTitle}>Sending Invitation</Text>
                 <Text style={{ color: '#AAA', marginBottom: 10 }}>Waiting for {selectedFriend?.username} to respond...</Text>
-                <TouchableOpacity onPress={() => { setInviteModalVisible(false); setGameModalVisible(false); }} style={styles.cancelInviteButton}>
+                <TouchableOpacity onPress={() => {playClick(),setInviteModalVisible(false); setGameModalVisible(false); }} style={styles.cancelInviteButton}>
                   <Text style={styles.cancelInviteButtonText}>Cancel</Text>
                 </TouchableOpacity>
               </>
@@ -661,12 +661,12 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
       </Modal>
 
       {/* Chat Modal (NEW) */}
-      <Modal visible={chatVisible} transparent animationType="fade" onRequestClose={closeChat}>
+      <Modal visible={chatVisible} transparent animationType="fade" onRequestClose={()=>{playClick(),closeChat()}}>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Chat with {chatFriend?.username}</Text>
-              <TouchableOpacity onPress={closeChat}><Feather name="x" size={20} color="#EDEDED" /></TouchableOpacity>
+              <TouchableOpacity onPress={()=>{playClick(),closeChat()}}><Feather name="x" size={20} color="#EDEDED" /></TouchableOpacity>
             </View>
             <FlatList
               data={chatMessages}
@@ -688,7 +688,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
                 placeholderTextColor="#777"
                 style={{ flex: 1, color: '#EDEDED', backgroundColor: '#1C1C1C', borderRadius: 10, paddingHorizontal: 12, height: 44 }}
               />
-              <TouchableOpacity onPress={sendChat} style={{ width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: '#333', borderRadius: 10, marginLeft: 8 }}>
+              <TouchableOpacity onPress={()=>{playClick(),sendChat()}} style={{ width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: '#333', borderRadius: 10, marginLeft: 8 }}>
                 <Feather name="send" size={18} color="#4ECDC4" />
               </TouchableOpacity>
             </View>

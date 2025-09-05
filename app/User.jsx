@@ -14,15 +14,19 @@ import {
   Image,
   ScrollView,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { playClick } from './utils/ClickSound';
 
 const { width, height } = Dimensions.get('window');
+const API_URL = 'https://chessmate-backend-lfxo.onrender.com/api';
 
 export default function AuthPage() {
-  const navigation = useNavigation();
+  const router = useRouter();
+
   const [formType, setFormType] = useState('login');
   const [formData, setFormData] = useState({ username: '', email: '', password: '', confirmPassword: '' });
   const [error, setError] = useState('');
@@ -34,36 +38,14 @@ export default function AuthPage() {
   const [editFormData, setEditFormData] = useState({ username: '', email: '' });
   const [profilePic, setProfilePic] = useState(null);
 
-  // ADDED: Message timeout ref for 3-second auto-dismiss
   const messageTimeoutRef = useRef(null);
 
-  const API_URL = 'https://chessmate-backend-lfxo.onrender.com/api';
-
-  // ADDED: showMessage function with 3-second auto-dismiss
   const showMessage = (message, type) => {
-    // Clear any existing timeout
-    if (messageTimeoutRef.current) {
-      clearTimeout(messageTimeoutRef.current);
-    }
-
-    // Set the appropriate message
-    if (type === 'error') {
-      setError(message);
-      setSuccessMessage('');
-    } else {
-      setSuccessMessage(message);
-      setError('');
-    }
-
-    // Set new timeout for 3 seconds
-    messageTimeoutRef.current = setTimeout(() => {
-      setError('');
-      setSuccessMessage('');
-      messageTimeoutRef.current = null;
-    }, 3000);
+    if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
+    if (type === 'error') { setError(message); setSuccessMessage(''); } else { setSuccessMessage(message); setError(''); }
+    messageTimeoutRef.current = setTimeout(() => { setError(''); setSuccessMessage(''); messageTimeoutRef.current = null; }, 3000);
   };
 
-  // Check authentication on mount
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -71,277 +53,200 @@ export default function AuthPage() {
         const token = await AsyncStorage.getItem('token');
         const userData = await AsyncStorage.getItem('user');
         if (token && userData) {
-          const parsedUser = JSON.parse(userData);
-          const response = await axios.get(`${API_URL}/verify-token`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (response.data.valid && !parsedUser.guest) {
-            const userResponse = await axios.get(`${API_URL}/user`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            const fullUser = userResponse.data.user;
-            setUser(fullUser);
-            setEditFormData({ username: fullUser.username || '', email: fullUser.email || '' });
-            setProfilePic(fullUser.profilePic || null);
-            await AsyncStorage.setItem('user', JSON.stringify(fullUser));
-          } else if (parsedUser.guest) {
-            setUser(parsedUser);
+          const parsed = JSON.parse(userData);
+          const tokenRes = await axios.get(`${API_URL}/verify-token`, { headers: { Authorization: `Bearer ${token}` } });
+          if (tokenRes.data.valid && !parsed.guest) {
+            const full = await axios.get(`${API_URL}/user`, { headers: { Authorization: `Bearer ${token}` } });
+            setUser(full.data.user);
+            setEditFormData({ username: full.data.user.username || '', email: full.data.user.email || '' });
+            setProfilePic(full.data.user.profilePic || null);
+            await AsyncStorage.setItem('user', JSON.stringify(full.data.user));
+          } else if (parsed.guest) {
+            setUser(parsed);
           } else {
-            await AsyncStorage.removeItem('user');
-            await AsyncStorage.removeItem('token');
-            setUser(null);
+            await AsyncStorage.removeItem('user'); await AsyncStorage.removeItem('token'); setUser(null);
           }
         }
-      } catch (err) {
-        console.error('AsyncStorage or token verification error:', err);
+      } catch (e) {
+        console.error('Auth check error:', e);
         showMessage('Failed to load user data', 'error');
         setUser(null);
       } finally {
         setLoading(false);
       }
     };
-
     checkAuth();
   }, []);
 
-  // ADDED: Cleanup timeout on component unmount
-  useEffect(() => {
-    return () => {
-      if (messageTimeoutRef.current) {
-        clearTimeout(messageTimeoutRef.current);
-      }
-    };
-  }, []);
+  useEffect(() => () => { if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current); }, []);
 
-  // Handle back button press
-  useEffect(() => {
-    const backAction = () => {
-      if (backPressedOnce) {
-        BackHandler.exitApp();
-        return true;
-      }
 
-      setBackPressedOnce(true);
-      showMessage('Press again to exit the app', 'error');
-      setTimeout(() => setBackPressedOnce(false), 2000);
-      return true;
-    };
-
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => backHandler.remove();
-  }, [backPressedOnce]);
-
-  // Handle input changes for login/signup form
   const handleInputChange = (field, value) => {
     setFormData({ ...formData, [field]: value });
-    // Clear messages immediately for input changes
-    setError('');
-    setSuccessMessage('');
-    if (messageTimeoutRef.current) {
-      clearTimeout(messageTimeoutRef.current);
-      messageTimeoutRef.current = null;
-    }
+    if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; }
+    setError(''); setSuccessMessage('');
   };
-
-  // Handle input changes for edit form
   const handleEditInputChange = (field, value) => {
     setEditFormData({ ...editFormData, [field]: value });
-    // Clear messages immediately for input changes
-    setError('');
-    setSuccessMessage('');
-    if (messageTimeoutRef.current) {
-      clearTimeout(messageTimeoutRef.current);
-      messageTimeoutRef.current = null;
-    }
+    if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; }
+    setError(''); setSuccessMessage('');
   };
 
-  // Validate login/signup form
   const validateForm = () => {
     const { username, email, password, confirmPassword } = formData;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
     if (formType === 'login') {
-      if (!email.trim() || !password.trim()) {
-        showMessage('Please fill in all fields', 'error');
-        return false;
-      }
-      if (!emailRegex.test(email)) {
-        showMessage('Invalid email format', 'error');
-        return false;
-      }
+      if (!email.trim() || !password.trim()) { showMessage('Please fill in all fields', 'error'); return false; }
+      if (!emailRegex.test(email)) { showMessage('Invalid email format', 'error'); return false; }
     } else {
-      if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
-        showMessage('Please fill in all fields', 'error');
-        return false;
-      }
-      if (!emailRegex.test(email)) {
-        showMessage('Invalid email format', 'error');
-        return false;
-      }
-      if (password.length < 6) {
-        showMessage('Password must be at least 6 characters', 'error');
-        return false;
-      }
-      if (password !== confirmPassword) {
-        showMessage('Passwords do not match', 'error');
-        return false;
-      }
+      if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) { showMessage('Please fill in all fields', 'error'); return false; }
+      if (!emailRegex.test(email)) { showMessage('Invalid email format', 'error'); return false; }
+      if (password.length < 6) { showMessage('Password must be at least 6 characters', 'error'); return false; }
+      if (password !== confirmPassword) { showMessage('Passwords do not match', 'error'); return false; }
     }
     return true;
   };
 
-  // Validate edit form
   const validateEditForm = () => {
     const { username, email } = editFormData;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!username.trim() || !email.trim()) {
-      showMessage('Please fill in all fields', 'error');
-      return false;
-    }
-    if (!emailRegex.test(email)) {
-      showMessage('Invalid email format', 'error');
-      return false;
-    }
+    if (!username.trim() || !email.trim()) { showMessage('Please fill in all fields', 'error'); return false; }
+    if (!emailRegex.test(email)) { showMessage('Invalid email format', 'error'); return false; }
     return true;
   };
 
-  // Handle login/signup submission
+  const handleUpdate = async () => {
+  if (!validateEditForm()) return;
+  setLoading(true);
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const res = await axios.put(`${API_URL}/user`, editFormData, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setUser(res.data.user);
+    setEditMode(false);
+    await AsyncStorage.setItem('user', JSON.stringify(res.data.user));
+    showMessage('Profile updated', 'success');
+  } catch (e) {
+    console.error('Update profile error:', e);
+    showMessage(e.response?.data?.message || 'Failed to update profile', 'error');
+  } finally {
+    setLoading(false);
+  }
+};
+
+
   const handleSubmit = async () => {
     if (!validateForm()) return;
-
     setLoading(true);
     try {
       const endpoint = formType === 'login' ? `${API_URL}/login` : `${API_URL}/signup`;
       const payload = formType === 'login'
         ? { email: formData.email, password: formData.password }
         : { username: formData.username, email: formData.email, password: formData.password };
-
-      const response = await axios.post(endpoint, payload);
-
+      const res = await axios.post(endpoint, payload);
       if (formType === 'signup') {
         showMessage('Account created successfully! Please login.', 'success');
         setFormType('login');
         setFormData({ username: '', email: '', password: '', confirmPassword: '' });
       } else {
-        await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
-        await AsyncStorage.setItem('token', response.data.token);
-        setUser(response.data.user);
-        setEditFormData({ username: response.data.user.username || '', email: response.data.user.email || '' });
-        setProfilePic(response.data.user.profilePic || null);
+        await AsyncStorage.setItem('user', JSON.stringify(res.data.user));
+        await AsyncStorage.setItem('token', res.data.token);
+        setUser(res.data.user);
+        setEditFormData({ username: res.data.user.username || '', email: res.data.user.email || '' });
+        setProfilePic(res.data.user.profilePic || null);
         setFormData({ username: '', email: '', password: '', confirmPassword: '' });
         showMessage('Welcome back!', 'success');
       }
-    } catch (err) {
-      console.error(`${formType} error:`, err);
-      showMessage(err.response?.data?.message || 'Something went wrong. Please try again.', 'error');
+    } catch (e) {
+      console.error(`${formType} error:`, e);
+      showMessage(e.response?.data?.message || 'Something went wrong. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle guest login
   const handleGuest = async () => {
     try {
       await AsyncStorage.setItem('user', JSON.stringify({ guest: true, username: 'Guest' }));
       setUser({ guest: true, username: 'Guest' });
-    } catch (err) {
-      console.error('Guest navigation error:', err);
+    } catch (e) {
+      console.error('Guest error:', e);
       showMessage('Navigation failed, please try again', 'error');
     }
   };
 
-  // Handle logout
   const handleLogout = async () => {
     try {
-      await AsyncStorage.removeItem('user');
-      await AsyncStorage.removeItem('token');
+      await AsyncStorage.removeItem('user'); await AsyncStorage.removeItem('token');
       setUser(null);
-      // Clear messages immediately on successful logout
-      if (messageTimeoutRef.current) {
-        clearTimeout(messageTimeoutRef.current);
-        messageTimeoutRef.current = null;
-      }
-      setError('');
-      setSuccessMessage('');
-      setEditMode(false);
-      setProfilePic(null);
-    } catch (err) {
-      console.error('Logout error:', err);
+      if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; }
+      setError(''); setSuccessMessage(''); setEditMode(false); setProfilePic(null);
+    } catch (e) {
+      console.error('Logout error:', e);
       showMessage('Failed to logout, please try again', 'error');
     }
   };
 
-  // Handle profile update
-  const handleUpdate = async () => {
-    if (!validateEditForm()) return;
-
-    setLoading(true);
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const response = await axios.put(
-        `${API_URL}/user`,
-        { username: editFormData.username, email: editFormData.email },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setUser(response.data.user);
-      await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
-      showMessage('Profile updated successfully', 'success');
-      setEditMode(false);
-    } catch (err) {
-      console.error('Update error:', err);
-      showMessage(err.response?.data?.message || 'Failed to update profile', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle profile picture change
   const handleChangeProfilePic = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      showMessage('Permission to access media library denied', 'error');
-      return;
-    }
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) {
+    showMessage('Permission to access media library denied', 'error');
+    return;
+  }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.9,
+  });
+
+  if (result.canceled) return;
+
+  // newer API: assets is an array
+  const asset = result.assets && result.assets[0];
+  if (!asset || !asset.uri) {
+    showMessage('Failed to pick image', 'error');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const token = await AsyncStorage.getItem('token');
+
+    const form = new FormData();
+    // On Android the uri will typically work fine. Name & type are required.
+    form.append('profilePic', {
+      uri: asset.uri,
+      name: 'profile.jpg',
+      type: 'image/jpeg',
     });
 
-    if (!result.canceled) {
-      setLoading(true);
-      try {
-        const token = await AsyncStorage.getItem('token');
-        const formDataUpload = new FormData();
-        formDataUpload.append('profilePic', {
-          uri: result.assets[0].uri,
-          type: 'image/jpeg',
-          name: 'profile.jpg',
-        });
+    const res = await axios.post(`${API_URL}/upload-profile-pic`, form, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'multipart/form-data',
+      },
+    });
 
-        const response = await axios.post(`${API_URL}/upload-profile-pic`, formDataUpload, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
-          },
-        });
+    // backend returns path like /Uploads/xxx
+    const returnedPath = res.data.profilePic;
+    const fullUrl = `${API_BASE}${returnedPath}`;
 
-        setProfilePic(response.data.profilePic);
-        setUser((prev) => ({ ...prev, profilePic: response.data.profilePic }));
-        await AsyncStorage.setItem('user', JSON.stringify({ ...user, profilePic: response.data.profilePic }));
-        showMessage('Profile picture updated successfully', 'success');
-      } catch (err) {
-        console.error('Profile picture upload error:', err);
-        showMessage('Failed to update profile picture', 'error');
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
+    setProfilePic(returnedPath); // keep server path in state too if you want
+    setUser((prev) => ({ ...prev, profilePic: returnedPath }));
+    // Save full user to AsyncStorage (store server path, or fullUrl if you prefer)
+    await AsyncStorage.setItem('user', JSON.stringify({ ...user, profilePic: returnedPath }));
+
+    showMessage('Profile picture updated successfully', 'success');
+  } catch (e) {
+    console.error('Upload error:', e);
+    showMessage('Failed to update profile picture', 'error');
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (loading && !user) {
     return (
@@ -352,294 +257,177 @@ export default function AuthPage() {
     );
   }
 
+  const elo = user?.elo;
+
+  const games = user?.matchesPlayed ?? 0;
+  const wins = user?.matchesWon ?? 0;
+  const winRate = games > 0 ? Math.round((wins / games) * 100) : 0;
+  const grade =
+  winRate > 90 ? "A++" :
+  winRate > 80 ? "A+" :
+  winRate > 60 ? "A" :
+  winRate > 50 ? "B++" :
+  winRate > 30 ? "B+" :
+  winRate > 25 ? "b" :
+  "C";
+
+
+const rate = { [grade]: true };
+
+
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
-        style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        {/* Fixed Header */}
-        <View style={styles.header}>
+      <KeyboardAvoidingView style={styles.keyboardAvoidingView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        {/* Gradient Header */}
+        <LinearGradient colors={['#111214', '#0F0F0F']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.header}>
           <Text style={styles.appTitle}>ChessMate</Text>
           <Text style={styles.appSubtitle}>Connect • Play • Master</Text>
-        </View>
+        </LinearGradient>
 
-        {/* Fixed Messages */}
-        {error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-
-        {successMessage ? (
-          <View style={styles.successContainer}>
-            <Text style={styles.successText}>{successMessage}</Text>
-          </View>
-        ) : null}
+        {/* Messages */}
+        {error ? (<View style={styles.errorContainer}><Text style={styles.errorText}>{error}</Text></View>) : null}
+        {successMessage ? (<View style={styles.successContainer}><Text style={styles.successText}>{successMessage}</Text></View>) : null}
 
         {user ? (
           <>
-            {/* Fixed Navigation Header for Profile */}
-            <View style={styles.profileHeader}>
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={() => navigation.navigate('index')}
-              >
-                <Text style={styles.backButtonText}>← Back</Text>
+            {/* Top bar */}
+            <View style={styles.topBar}>
+              <TouchableOpacity onPress={() =>{playClick(), router.push('/')}} activeOpacity={0.85}>
+                <LinearGradient colors={['#1E1E1E', '#151515']} style={styles.topBarBtn}><Text style={styles.topBarBtnText}>← Home</Text></LinearGradient>
               </TouchableOpacity>
-
-              <Text style={styles.profileTitle}>My Account</Text>
-
-              <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                <Text style={styles.logoutButtonText}>Logout</Text>
+              <Text style={styles.topBarTitle}>My Account</Text>
+              <TouchableOpacity onPress={()=>{playClick(),handleLogout()}} activeOpacity={0.85}>
+                <LinearGradient colors={['#FF6B6B', '#FF8E8E']} style={styles.topBarBtn}><Text style={styles.topBarBtnText}>Logout</Text></LinearGradient>
               </TouchableOpacity>
             </View>
 
-            {/* Scrollable Profile Content */}
             <ScrollView style={styles.scrollableContent} contentContainerStyle={styles.scrollContainer}>
-              {/* Profile Picture Section */}
+              {/* Avatar Card */}
               {!user.guest && (
-                <View style={styles.profilePicSection}>
-                  <View style={styles.profilePicContainer}>
-                    {profilePic ? (
-                      <Image source={{ uri: `${API_URL}${profilePic}` }} style={styles.profilePic} />
-                    ) : (
-                      <View style={styles.placeholderPic}>
-                        <Text style={styles.placeholderText}>
-                          {user?.username?.[0]?.toUpperCase() || 'U'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <TouchableOpacity  >
-                    <Text style={styles.changePicText}>{user.username?.toUpperCase()}</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* User Information */}
-              <View style={styles.userInfoContainer}>
-                {user.guest ? (
-                  <View style={styles.guestInfo}>
-                    <Text style={styles.guestTitle}>👤 Guest User</Text>
-                    <Text style={styles.guestSubtext}>Playing as guest with limited features</Text>
-                  </View>
-                ) : editMode ? (
-                  /* Edit Mode */
-                  <View style={styles.editContainer}>
-                    <Text style={styles.sectionTitle}>✏️ Edit Profile</Text>
-
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Username</Text>
-                      <TextInput
-                        style={styles.modernInput}
-                        value={editFormData.username}
-                        onChangeText={(v) => handleEditInputChange('username', v)}
-                        placeholder="Enter username"
-                        placeholderTextColor="#888"
-                        autoCapitalize="none"
-                      />
-                    </View>
-
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Email</Text>
-                      <TextInput
-                        style={styles.modernInput}
-                        value={editFormData.email}
-                        onChangeText={(v) => handleEditInputChange('email', v)}
-                        placeholder="Enter email"
-                        placeholderTextColor="#888"
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                      />
-                    </View>
-
-                    <View style={styles.editActions}>
-                      {loading ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
+                <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.cardOuter}>
+                  <View style={styles.cardInner}>
+                    <View style={styles.avatarWrap}>
+                      {profilePic ? (
+                         <Image source={{ uri: `${API_BASE}${profilePic}` }} style={styles.profilePic} />
                       ) : (
-                        <>
-                          <TouchableOpacity style={[styles.solidButton, styles.saveButton]} onPress={handleUpdate}>
-                            <Text style={styles.saveButtonText}>💾 Save Changes</Text>
-                          </TouchableOpacity>
-                        </>
+                        <View style={styles.placeholderPic}><Text style={styles.placeholderText}>{user?.username[0]?.toUpperCase() || 'U'}</Text></View>
                       )}
-
-                      <TouchableOpacity style={styles.cancelButton} onPress={() => setEditMode(false)}>
-                        <Text style={styles.cancelButtonText}>❌ Cancel</Text>
-                      </TouchableOpacity>
                     </View>
-                  </View>
-                ) : (
-                  /* Display Mode */
-                  <View style={styles.displayContainer}>
-                    <Text style={styles.sectionTitle}>📋 Profile Information</Text>
-
-                    <View style={styles.infoCard}>
-                      <View style={styles.infoItem}>
-                        <Text style={styles.infoLabel}>👤 Username:</Text>
-                        <Text style={styles.infoValue}>{user?.username || 'N/A'}</Text>
-                      </View>
-                      <View style={styles.infoItem}>
-                        <Text style={styles.infoLabel}>📧 Email:</Text>
-                        <Text style={styles.infoValue}>{user?.email || 'N/A'}</Text>
-                      </View>
-                    </View>
-
-                    {/* Game Statistics */}
-                    <View style={styles.statsCard}>
-                      <Text style={styles.statsTitle}>🎮 Game Statistics</Text>
-                      <View style={styles.statsGrid}>
-                        <View style={styles.statItem}>
-                          <Text style={styles.statNumber}>{user?.matchesPlayed || 0}</Text>
-                          <Text style={styles.statLabel}>Games Played</Text>
-                        </View>
-                        <View style={styles.statItem}>
-                          <Text style={styles.statNumber}>{user?.matchesWon || 0}</Text>
-                          <Text style={styles.statLabel}>Games Won</Text>
-                        </View>
-                        <View style={styles.statItem}>
-                          <Text style={styles.statNumber}>
-                            {user?.matchesPlayed > 0 ? Math.round((user?.matchesWon / user?.matchesPlayed) * 100) : 0}%
-                          </Text>
-                          <Text style={styles.statLabel}>Win Rate</Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <TouchableOpacity 
-                      style={[styles.solidButton, styles.editProfileButton]} 
-                      onPress={() => setEditMode(true)}
-                    >
-                      <Text style={styles.editProfileText}>✏️ Edit Profile</Text>
+                    <TouchableOpacity onPress={()=>{playClick(),handleChangeProfilePic()}} activeOpacity={0.9}>
+                      <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.primaryBtn}>
+                        <Text style={styles.primaryBtnText}>Upload New Photo</Text>
+                      </LinearGradient>
                     </TouchableOpacity>
                   </View>
-                )}
+                </LinearGradient>
+              )}
+
+              {/* Quick Links */}
+              <View style={styles.quickLinksRow}>
+                <TouchableOpacity onPress={() =>{playClick(), router.push('/setting')}} activeOpacity={0.9} style={{ flex: 1 }}>
+                  <LinearGradient colors={['#1F1F1F', '#161616']} style={styles.quickLink}><Text style={styles.quickLinkText}>⚙️ Settings</Text></LinearGradient>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() =>{playClick(), router.push('/Items')}} activeOpacity={0.9} style={{ flex: 1 }}>
+                  <LinearGradient colors={['#1F1F1F', '#161616']} style={styles.quickLink}><Text style={styles.quickLinkText}>🎒 Items</Text></LinearGradient>
+                </TouchableOpacity>
+                  <TouchableOpacity onPress={() =>{playClick(), router.push('/Friend')}} activeOpacity={0.9} style={{ flex: 1 }}>
+                  <LinearGradient colors={['#1F1F1F', '#161616']} style={styles.quickLink}><Text style={styles.quickLinkText}>👥 Friends</Text></LinearGradient>
+                </TouchableOpacity>
               </View>
+
+              {/* Profile Info */}
+              <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.cardOuter}>
+                <View style={styles.cardInner}>
+                  <Text style={styles.sectionTitle}>Profile</Text>
+                  <View style={styles.infoRow}><Text style={styles.infoLabel}>Username</Text><Text style={styles.infoValue}>{user?.username || 'N/A'}</Text></View>
+                  <View style={styles.infoRow}><Text style={styles.infoLabel}>Email</Text><Text style={styles.infoValue}>{user?.email || 'N/A'}</Text></View>
+                </View>
+              </LinearGradient>
+
+              {/* Stat Chips */}
+              <View style={styles.statsRow}>
+                <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.statChip}><Text style={styles.statTitle}>ELO</Text><Text style={styles.statValue}>{elo}</Text></LinearGradient>
+                <LinearGradient colors={['#45B7D1', '#6BC5D1']} style={styles.statChip}><Text style={styles.statTitle}>Points</Text><Text style={styles.statValue}>{grade}</Text></LinearGradient>
+                <LinearGradient colors={['#9B59B6', '#B569C6']} style={styles.statChip}><Text style={styles.statTitle}>Win %</Text><Text style={styles.statValue}>{winRate}%</Text></LinearGradient>
+              </View>
+
+              {/* Extended Stats */}
+              <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.cardOuter}>
+                <View style={styles.cardInner}>
+                  <Text style={styles.sectionTitle}>Game Statistics</Text>
+                  <View style={styles.grid}>
+                    <View style={styles.gridItem}><Text style={styles.gridNumber}>{games}</Text><Text style={styles.gridLabel}>Games</Text></View>
+                    <View style={styles.gridItem}><Text style={styles.gridNumber}>{wins}</Text><Text style={styles.gridLabel}>Wins</Text></View>
+                    <View style={styles.gridItem}><Text style={styles.gridNumber}>{winRate}%</Text><Text style={styles.gridLabel}>Win Rate</Text></View>
+                  </View>
+                </View>
+              </LinearGradient>
+
+              {/* Edit Card */}
+              {!user.guest && (
+                <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.cardOuter}>
+                  <View style={styles.cardInner}>
+                    {editMode ? (
+                      <>
+                        <Text style={styles.sectionTitle}>Edit Profile</Text>
+                        <View style={styles.inputGroup}><Text style={styles.inputLabel}>Username</Text><TextInput style={styles.input} value={editFormData.username} onChangeText={(v) => handleEditInputChange('username', v)} placeholder="Enter username" placeholderTextColor="#888" autoCapitalize="none" /></View>
+                        <View style={styles.inputGroup}><Text style={styles.inputLabel}>Email</Text><TextInput style={styles.input} value={editFormData.email} onChangeText={(v) => handleEditInputChange('email', v)} placeholder="Enter email" placeholderTextColor="#888" autoCapitalize="none" keyboardType="email-address" /></View>
+                        <TouchableOpacity onPress={()=>{playClick(),handleUpdate()}} activeOpacity={0.9}>
+                          <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save Changes</Text></LinearGradient>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() =>{playClick(), setEditMode(false)}} activeOpacity={0.85} style={{ marginTop: 10 }}>
+                          <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Cancel</Text></LinearGradient>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <TouchableOpacity onPress={() =>{playClick(), setEditMode(true)}} activeOpacity={0.9}>
+                        <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Edit Profile</Text></LinearGradient>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </LinearGradient>
+              )}
+
+              {/* Guest Note */}
+              {user.guest && (
+                <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.cardOuter}>
+                  <View style={styles.cardInner}><Text style={styles.guestNote}>Playing as Guest with limited features</Text></View>
+                </LinearGradient>
+              )}
             </ScrollView>
           </>
         ) : (
           <>
-            {/* Fixed Form Toggle */}
-            <View style={styles.toggleContainer}>
-              <TouchableOpacity
-                style={[styles.toggleButton, formType === 'login' && styles.toggleButtonActive]}
-                onPress={() => {
-                  setFormType('login');
-                  // Clear messages immediately
-                  if (messageTimeoutRef.current) {
-                    clearTimeout(messageTimeoutRef.current);
-                    messageTimeoutRef.current = null;
-                  }
-                  setError('');
-                  setSuccessMessage('');
-                  setFormData({ username: '', email: '', password: '', confirmPassword: '' });
-                }}
-              >
-                <Text
-                  style={[styles.toggleText, formType === 'login' && styles.toggleTextActive]}
-                >
-                  🔐 Login
-                </Text>
+            {/* Toggle */}
+            <View style={styles.toggleWrap}>
+              <TouchableOpacity onPress={() => {playClick(), setFormType('login'); if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; } setError(''); setSuccessMessage(''); setFormData({ username: '', email: '', password: '', confirmPassword: '' }); }} style={[styles.toggleBtn, formType === 'login' && styles.toggleActive]}>
+                <Text style={[styles.toggleText, formType === 'login' && styles.toggleTextActive]}>🔐 Login</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.toggleButton, formType === 'signup' && styles.toggleButtonActive]}
-                onPress={() => {
-                  setFormType('signup');
-                  // Clear messages immediately
-                  if (messageTimeoutRef.current) {
-                    clearTimeout(messageTimeoutRef.current);
-                    messageTimeoutRef.current = null;
-                  }
-                  setError('');
-                  setSuccessMessage('');
-                  setFormData({ username: '', email: '', password: '', confirmPassword: '' });
-                }}
-              >
-                <Text
-                  style={[styles.toggleText, formType === 'signup' && styles.toggleTextActive]}
-                >
-                  📝 Sign Up
-                </Text>
+              <TouchableOpacity onPress={() => {playClick(), setFormType('signup'); if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; } setError(''); setSuccessMessage(''); setFormData({ username: '', email: '', password: '', confirmPassword: '' }); }} style={[styles.toggleBtn, formType === 'signup' && styles.toggleActive]}>
+                <Text style={[styles.toggleText, formType === 'signup' && styles.toggleTextActive]}>📝 Sign Up</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Scrollable Authentication Form Content */}
+            {/* Auth form */}
             <ScrollView style={styles.authScrollView} contentContainerStyle={styles.authScrollContainer}>
-              <View style={styles.authContainer}>
-                <View style={styles.formContainer}>
-                  {/* Form Inputs */}
+              <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.cardOuter}>
+                <View style={styles.cardInner}>
                   {formType === 'signup' && (
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>👤 Username</Text>
-                      <TextInput
-                        style={styles.modernInput}
-                        value={formData.username}
-                        onChangeText={(v) => handleInputChange('username', v)}
-                        placeholder="Enter your username"
-                        placeholderTextColor="#888"
-                        autoCapitalize="none"
-                      />
-                    </View>
+                    <View style={styles.inputGroup}><Text style={styles.inputLabel}>👤 Username</Text><TextInput style={styles.input} value={formData.username} onChangeText={(v) => handleInputChange('username', v)} placeholder="Enter your username" placeholderTextColor="#888" autoCapitalize="none" /></View>
                   )}
+                  <View style={styles.inputGroup}><Text style={styles.inputLabel}>📧 Email</Text><TextInput style={styles.input} value={formData.email} onChangeText={(v) => handleInputChange('email', v)} placeholder="Enter your email" placeholderTextColor="#888" keyboardType="email-address" autoCapitalize="none" /></View>
+                  <View style={styles.inputGroup}><Text style={styles.inputLabel}>🔒 Password</Text><TextInput style={styles.input} value={formData.password} onChangeText={(v) => handleInputChange('password', v)} placeholder="Enter your password" placeholderTextColor="#888" secureTextEntry /></View>
+                  {formType === 'signup' && (<View style={styles.inputGroup}><Text style={styles.inputLabel}>🔒 Confirm Password</Text><TextInput style={styles.input} value={formData.confirmPassword} onChangeText={(v) => handleInputChange('confirmPassword', v)} placeholder="Confirm password" placeholderTextColor="#888" secureTextEntry /></View>)}
 
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>📧 Email</Text>
-                    <TextInput
-                      style={styles.modernInput}
-                      value={formData.email}
-                      onChangeText={(v) => handleInputChange('email', v)}
-                      placeholder="Enter your email"
-                      placeholderTextColor="#888"
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                    />
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>🔒 Password</Text>
-                    <TextInput
-                      style={styles.modernInput}
-                      value={formData.password}
-                      onChangeText={(v) => handleInputChange('password', v)}
-                      placeholder="Enter your password"
-                      placeholderTextColor="#888"
-                      secureTextEntry
-                    />
-                  </View>
-
-                  {formType === 'signup' && (
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>🔒 Confirm Password</Text>
-                      <TextInput
-                        style={styles.modernInput}
-                        value={formData.confirmPassword}
-                        onChangeText={(v) => handleInputChange('confirmPassword', v)}
-                        placeholder="Confirm your password"
-                        placeholderTextColor="#888"
-                        secureTextEntry
-                      />
-                    </View>
-                  )}
-
-                  {/* Submit Button */}
-                  <TouchableOpacity style={[styles.solidButton, styles.submitButton]} onPress={handleSubmit}>
-                    {loading ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.submitText}>
-                        {formType === 'login' ? '🚀 Login' : '✨ Create Account'}
-                      </Text>
-                    )}
+                  <TouchableOpacity onPress={()=>{playClick(),handleSubmit()}} activeOpacity={0.9}>
+                    <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>{formType === 'login' ? '🚀 Login' : '✨ Create Account'}</Text></LinearGradient>
                   </TouchableOpacity>
 
-                  {/* Guest Option */}
-                  <TouchableOpacity style={styles.guestButton} onPress={handleGuest}>
-                    <Text style={styles.guestButtonText}>👤 Continue as Guest</Text>
+                  <TouchableOpacity onPress={()=>{playClick(),handleGuest()}} activeOpacity={0.9} style={{ marginTop: 12 }}>
+                    <LinearGradient colors={['#1F1F1F', '#161616']} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>👤 Continue as Guest</Text></LinearGradient>
                   </TouchableOpacity>
                 </View>
-              </View>
+              </LinearGradient>
             </ScrollView>
           </>
         )}
@@ -649,388 +437,70 @@ export default function AuthPage() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingTop: 35,
-    backgroundColor: '#000000',
-  },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
-  scrollableContent: {
-    flex: 1,
-  },
-  scrollContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    paddingTop: 10,
-  },
-  authScrollView: {
-    flex: 1,
-  },
-  authScrollContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    paddingTop: 10,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: '#AAAAAA',
-    fontSize: 16,
-    marginTop: 15,
-  },
-  header: {
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333333',
-  },
-  appTitle: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  appSubtitle: {
-    color: '#AAAAAA',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  errorContainer: {
-    backgroundColor: '#AA0000',
-    padding: 15,
-    marginHorizontal: 20,
-    marginBottom: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#333333',
-  },
-  errorText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  successContainer: {
-    backgroundColor: '#333333',
-    padding: 15,
-    marginHorizontal: 20,
-    marginBottom: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#555555',
-  },
-  successText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333333',
-  },
-  backButton: {
-    backgroundColor: '#1A1A1A',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#333333',
-  },
-  backButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  profileTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  logoutButton: {
-    backgroundColor: '#AA0000',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#333333',
-  },
-  logoutButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  profilePicSection: {
-    alignItems: 'center',
-    marginBottom: 30,
-    marginTop: 20,
-  },
-  profilePicContainer: {
-    marginBottom: 15,
-  },
-  profilePic: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 3,
-    borderColor: '#555555',
-  },
-  placeholderPic: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#1A1A1A',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#555555',
-  },
-  placeholderText: {
-    color: '#FFFFFF',
-    fontSize: 48,
-    fontWeight: 'bold',
-  },
-  changePicButton: {
-    backgroundColor: '#1A1A1A',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#555555',
-  },
-  changePicText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  userInfoContainer: {
-    flex: 1,
-  },
-  guestInfo: {
-    alignItems: 'center',
-    padding: 30,
-    backgroundColor: '#1A1A1A',
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#333333',
-  },
-  guestTitle: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  guestSubtext: {
-    color: '#AAAAAA',
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  sectionTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  editContainer: {
-    backgroundColor: '#1A1A1A',
-    padding: 20,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#333333',
-  },
-  displayContainer: {
-    backgroundColor: '#1A1A1A',
-    padding: 20,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#333333',
-  },
-  infoCard: {
-    backgroundColor: '#333333',
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#555555',
-  },
-  infoItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#555555',
-  },
-  infoLabel: {
-    color: '#AAAAAA',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  infoValue: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  statsCard: {
-    backgroundColor: '#333333',
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#555555',
-  },
-  statsTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    textAlign: 'center',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  statLabel: {
-    color: '#AAAAAA',
-    fontSize: 12,
-    marginTop: 5,
-    textAlign: 'center',
-  },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  inputLabel: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  modernInput: {
-    backgroundColor: '#333333',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 15,
-    color: '#FFFFFF',
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#555555',
-  },
-  editActions: {
-    marginTop: 10,
-  },
-  solidButton: {
-    backgroundColor: '#333333',
-    paddingVertical: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#555555',
-  },
-  saveButton: {
-    marginBottom: 15,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  cancelButton: {
-    alignItems: 'center',
-    padding: 12,
-  },
-  cancelButtonText: {
-    color: '#AAAAAA',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  editProfileButton: {
-    marginTop: 10,
-  },
-  editProfileText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    backgroundColor: '#1A1A1A',
-    borderRadius: 15,
-    padding: 5,
-    marginBottom: 10,
-    marginTop: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333333',
-    borderWidth: 1,
-    borderColor: '#333333',
-  },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 15,
-    alignItems: 'center',
-    borderRadius: 10,
-  },
-  toggleButtonActive: {
-    backgroundColor: '#333333',
-  },
-  toggleText: {
-    color: '#AAAAAA',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  toggleTextActive: {
-    color: '#FFFFFF',
-  },
-  authContainer: {
-    flex: 1,
-    justifyContent: 'start',
-    minHeight: height - 350,
-  },
-  formContainer: {
-    marginBottom: 30,
-  },
-  submitButton: {
-    marginBottom: 20,
-  },
-  submitText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  guestButton: {
-    alignItems: 'center',
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#555555',
-    borderRadius: 12,
-    backgroundColor: '#1A1A1A',
-  },
-  guestButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  container: { flex: 1, paddingTop: 35, backgroundColor: '#0F0F0F' },
+  keyboardAvoidingView: { flex: 1 },
+  header: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#222' },
+  appTitle: { color: '#FFFFFF', fontSize: 30, fontWeight: 'bold', marginBottom: 6 },
+  appSubtitle: { color: '#AAAAAA', fontSize: 14, fontWeight: '500' },
+
+  errorContainer: { backgroundColor: '#AA0000', padding: 12, marginHorizontal: 16, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: '#330' },
+  errorText: { color: '#FFF', textAlign: 'center', fontSize: 13, fontWeight: '600' },
+  successContainer: { backgroundColor: '#1C1C1C', padding: 12, marginHorizontal: 16, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: '#2A2A2A' },
+  successText: { color: '#EDEDED', textAlign: 'center', fontSize: 13, fontWeight: '600' },
+
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
+  topBarBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: '#2E2E2E' },
+  topBarBtnText: { color: '#EDEDED', fontSize: 12, fontWeight: '700' },
+  topBarTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+
+  scrollableContent: { flex: 1 },
+  scrollContainer: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 6 },
+
+  cardOuter: { borderRadius: 16, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#2A2A2A' },
+  cardInner: { padding: 14, backgroundColor: '#171717' },
+
+  avatarWrap: { alignItems: 'center', marginBottom: 12 },
+  profilePic: { width: 120, height: 120, borderRadius: 60, borderWidth: 3, borderColor: '#444' },
+  placeholderPic: { width: 120, height: 120, borderRadius: 60, backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#444' },
+  placeholderText: { color: '#FFFFFF', fontSize: 46, fontWeight: '800' },
+
+  primaryBtn: { paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  primaryBtnText: { color: '#0B0B0B', fontWeight: '800' },
+  secondaryBtn: { paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#2A2A2A' },
+  secondaryBtnText: { color: '#EDEDED', fontWeight: '700' },
+
+  quickLinksRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
+  quickLink: { paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#2A2A2A' },
+  quickLinkText: { color: '#FFFFFF', fontWeight: '800' },
+
+  sectionTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', marginBottom: 10 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#2A2A2A' },
+  infoLabel: { color: '#AAAAAA', fontSize: 13, fontWeight: '600' },
+  infoValue: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
+  statChip: { flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  statTitle: { color: 'rgba(0,0,0,0.7)', fontWeight: '800', fontSize: 12 },
+  statValue: { color: '#0B0B0B', fontWeight: '900', fontSize: 18, marginTop: 3 },
+
+  grid: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 6 },
+  gridItem: { alignItems: 'center', paddingVertical: 6 },
+  gridNumber: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' },
+  gridLabel: { color: '#AAAAAA', fontSize: 12, marginTop: 4 },
+
+  inputGroup: { marginTop: 6, marginBottom: 10 },
+  inputLabel: { color: '#EDEDED', fontSize: 13, fontWeight: '700', marginBottom: 6 },
+  input: { backgroundColor: '#222', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: '#FFFFFF', borderWidth: 1, borderColor: '#333' },
+
+  toggleWrap: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12, backgroundColor: '#151515', borderRadius: 14, padding: 5, borderWidth: 1, borderColor: '#2A2A2A' },
+  toggleBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 10 },
+  toggleActive: { backgroundColor: '#262626' },
+  toggleText: { color: '#AAAAAA', fontWeight: '700' },
+  toggleTextActive: { color: '#FFFFFF' },
+
+  authScrollView: { flex: 1 },
+  authScrollContainer: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 24, paddingTop: 10 },
+
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { color: '#AAAAAA', fontSize: 16, marginTop: 12 },
 });

@@ -6,6 +6,7 @@ import { Picker } from '@react-native-picker/picker';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { playClick } from './utils/ClickSound';
 
 const { width, height } = Dimensions.get('window');
 const squareSize = Math.min(width * 0.113, 45);
@@ -495,7 +496,7 @@ export default function ChessAiApp() {
       
       {/* Minimalistic Header */}
       <View style={styles.headerContainer}>
-        <TouchableOpacity onPress={handleExit} style={styles.headerButton}>
+        <TouchableOpacity onPress={() =>{playClick(),handleExit()}} style={styles.headerButton}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         
@@ -504,7 +505,7 @@ export default function ChessAiApp() {
           <Text style={styles.gameModeSubtext}>vs AI ({level})</Text>
         </View>
 
-        <TouchableOpacity onPress={toggleSidebar} style={styles.headerButton}>
+        <TouchableOpacity onPress={() =>{playClick(),toggleSidebar()}} style={styles.headerButton}>
           <Ionicons name="settings" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
@@ -649,7 +650,7 @@ export default function ChessAiApp() {
 
       {/* Control Panel */}
       <View style={styles.controlPanel}>
-        <TouchableOpacity style={styles.undoButton} onPress={handleUndo}>
+        <TouchableOpacity style={styles.undoButton} onPress={() =>{playClick(),handleUndo()}}>
           <Ionicons name="arrow-undo" size={18} color="#FFFFFF" />
           <Text style={styles.undoButtonText}>Undo</Text>
         </TouchableOpacity>
@@ -658,9 +659,9 @@ export default function ChessAiApp() {
       {/* Minimalistic Sidebar */}
       {isSidebarOpen && (
         <>
-          <TouchableOpacity style={styles.overlay} onPress={toggleSidebar} />
+          <TouchableOpacity style={styles.overlay} onPress={() =>{playClick(),toggleSidebar()}} />
           <View style={styles.sidebar}>
-            <TouchableOpacity style={styles.closeButton} onPress={toggleSidebar}>
+            <TouchableOpacity style={styles.closeButton} onPress={() =>{playClick(),toggleSidebar()}}>
               <Ionicons name="close" size={24} color="#FFFFFF" />
             </TouchableOpacity>
             
@@ -675,7 +676,7 @@ export default function ChessAiApp() {
                   <Picker
                     selectedValue={level}
                     style={styles.picker}
-                    onValueChange={handleLevelChange}
+                    onValueChange={() =>{playClick(),handleLevelChange()}}
                     mode="dropdown"
                     dropdownIconColor="#FFFFFF"
                   >
@@ -687,22 +688,22 @@ export default function ChessAiApp() {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.sidebarButton} onPress={handlePauseResume}>
+            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{playClick(),handlePauseResume()}}>
               <Ionicons name={isPlay ? "pause" : "play"} size={18} color="#FFFFFF" />
               <Text style={styles.sidebarButtonText}>{pauseName}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.sidebarButton} onPress={toggleBoardOrientation}>
+            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{playClick(),toggleBoardOrientation()}}>
               <Ionicons name="swap-vertical" size={18} color="#FFFFFF" />
               <Text style={styles.sidebarButtonText}>Flip Board</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.sidebarButton} onPress={resetGame}>
+            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{playClick(),resetGame()}}>
               <Ionicons name="refresh" size={18} color="#FFFFFF" />
               <Text style={styles.sidebarButtonText}>Restart</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.sidebarButton} onPress={handleExit}>
+            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{playClick(),handleExit()}}>
               <Ionicons name="exit" size={18} color="#FFFFFF" />
               <Text style={styles.sidebarButtonText}>Exit</Text>
             </TouchableOpacity>
@@ -714,7 +715,7 @@ export default function ChessAiApp() {
                 <Text style={styles.toggleLabel}>Show Moves</Text>
                 <TouchableOpacity
                   style={[styles.toggleSwitch, showMoves ? styles.toggleSwitchOn : styles.toggleSwitchOff]}
-                  onPress={toggleShowMoves}
+                  onPress={() =>{playClick(),toggleShowMoves()}}
                 >
                   <View style={[styles.toggleKnob, showMoves ? styles.toggleKnobOn : styles.toggleKnobOff]} />
                 </TouchableOpacity>
@@ -726,15 +727,15 @@ export default function ChessAiApp() {
               <View style={styles.colorPalette}>
                 <TouchableOpacity 
                   style={styles.colorOption1} 
-                  onPress={() => handleColorChange('#EDEDED','#8B5A5A')} 
+                  onPress={() =>{playClick(), handleColorChange('#EDEDED','#8B5A5A')}} 
                 />
                 <TouchableOpacity 
                   style={styles.colorOption2} 
-                  onPress={() => handleColorChange('#D3D3D3', '#A9A9A9')} 
+                  onPress={() =>{playClick(), handleColorChange('#D3D3D3', '#A9A9A9')}} 
                 />
                 <TouchableOpacity 
                   style={styles.colorOption3} 
-                  onPress={() => handleColorChange('#FAF0E6', '#5F9EA0')} 
+                  onPress={() =>{playClick(), handleColorChange('#FAF0E6', '#5F9EA0')} }
                 />
               </View>
             </View>
@@ -764,7 +765,7 @@ export default function ChessAiApp() {
         visible={promotionModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setPromotionModalVisible(false)}
+        onRequestClose={() =>{playClick(), setPromotionModalVisible(false)}}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -773,7 +774,7 @@ export default function ChessAiApp() {
               {['q', 'r', 'b', 'n'].map(piece => (
                 <TouchableOpacity
                   key={piece}
-                  onPress={() => handlePromotion(piece)}
+                  onPress={() =>{playClick(), handlePromotion(piece)}}
                   style={styles.promotionOption}
                 >
                   <Image source={pieceImages[piece]} style={styles.promotionPiece} />
@@ -788,7 +789,7 @@ export default function ChessAiApp() {
         visible={gameOverModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setGameOverModalVisible(false)}
+        onRequestClose={() =>{playClick(), setGameOverModalVisible(false)}}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -796,10 +797,10 @@ export default function ChessAiApp() {
             <Text style={styles.modalTitle}>Game Over</Text>
             <Text style={styles.gameOverMessage}>{gameOverMessage}</Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalButton} onPress={handleRematch}>
+              <TouchableOpacity style={styles.modalButton} onPress={() =>{playClick(),handleRematch()}}>
                 <Text style={styles.modalButtonText}>Rematch</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButton} onPress={handleExit}>
+              <TouchableOpacity style={styles.modalButton} onPress={() =>{playClick(),handleExit()}}>
                 <Text style={styles.modalButtonText}>Exit</Text>
               </TouchableOpacity>
             </View>
@@ -811,7 +812,7 @@ export default function ChessAiApp() {
         visible={exitModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setExitModalVisible(false)}
+        onRequestClose={() =>{playClick(), setExitModalVisible(false)}}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -819,10 +820,10 @@ export default function ChessAiApp() {
             <Text style={styles.modalTitle}>Leave Game?</Text>
             <Text style={styles.exitMessage}>Are you sure you want to leave?</Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalButton} onPress={handleConfirmExit}>
+              <TouchableOpacity style={styles.modalButton} onPress={() =>{playClick(),handleConfirmExit()}}>
                 <Text style={styles.modalButtonText}>Yes</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButton} onPress={handleCancelModal}>
+              <TouchableOpacity style={styles.modalButton} onPress={() =>{playClick(),handleCancelModal()}}>
                 <Text style={styles.modalButtonText}>No</Text>
               </TouchableOpacity>
             </View>

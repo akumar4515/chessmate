@@ -1,5 +1,6 @@
+// app/music.js
 import React, { createContext, useEffect, useRef, useState } from 'react';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { usePathname } from 'expo-router';
 
 export const MusicContext = createContext();
@@ -7,111 +8,101 @@ export const MusicContext = createContext();
 const excludedRoutes = ['/chess', '/chessAi', '/chessMulti', '/introVideo'];
 
 export default function MusicProvider({ children }) {
-  const sound = useRef(null);
+  const soundRef = useRef(null);
   const pathname = usePathname();
   const [isLoaded, setIsLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // Configure audio + load music once
   useEffect(() => {
-    const initializeAudio = async () => {
-      try {
-        // Set audio mode for better compatibility
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          staysActiveInBackground: false,
-          interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (error) {
-        console.warn('Audio mode setup error:', error);
-      }
-    };
+    let mounted = true;
 
-    initializeAudio();
-  }, []);
-
-  useEffect(() => {
-    const manageAudio = async () => {
+    (async () => {
       try {
-        // Load audio only once
-        if (!sound.current && !excludedRoutes.includes(pathname)) {
-          console.log("🎵 Loading background music");
-          const { sound: loadedSound } = await Audio.Sound.createAsync(
-            require('../assets/sounds/audio.mp3'),
-            { 
-              isLooping: true, 
-              volume: 0.3, // Reduced volume for better UX
-              shouldPlay: true,
-            }
-          );
-          
-          sound.current = loadedSound;
-          setIsLoaded(true);
+      await Audio.setAudioModeAsync({
+  staysActiveInBackground: true,
+  playsInSilentModeIOS: true,
+  allowsRecordingIOS: false,
+  interruptionModeIOS: InterruptionModeIOS.DuckOthers,         // <— enum
+  interruptionModeAndroid: InterruptionModeAndroid.DuckOthers, // <— enum
+  shouldDuckAndroid: true,
+  playThroughEarpieceAndroid: false,
+});
+
+        const { sound } = await Audio.Sound.createAsync(
+          require('../assets/sounds/audio.mp3'),
+          { isLooping: true, volume: 0.3, shouldPlay: false }
+        );
+        soundRef.current = sound;
+        if (!mounted) return;
+
+        setIsLoaded(true);
+
+        // Start if current route is allowed
+        if (!excludedRoutes.includes(pathname)) {
+          await sound.playAsync();
           setIsPlaying(true);
-          console.log("🎵 Background music started");
-        } else if (sound.current) {
-          const status = await sound.current.getStatusAsync();
-          
-          if (excludedRoutes.includes(pathname)) {
-            // Pause music in excluded routes
-            if (status.isLoaded && status.isPlaying) {
-              await sound.current.pauseAsync();
-              setIsPlaying(false);
-              console.log("⏸️ Background music paused");
-            }
-          } else {
-            // Resume music in allowed routes
-            if (status.isLoaded && !status.isPlaying) {
-              await sound.current.playAsync();
-              setIsPlaying(true);
-              console.log("▶️ Background music resumed");
-            }
+        }
+      } catch (e) {
+        console.warn('Music init error:', e);
+      }
+    })();
+
+    // Unload only when provider unmounts
+    return () => {
+      mounted = false;
+      soundRef.current?.unloadAsync().catch(() => {});
+      soundRef.current = null;
+    };
+  }, []); // mount/unmount only
+
+  // Pause/Resume on route changes
+  useEffect(() => {
+    const run = async () => {
+      if (!soundRef.current) return;
+      try {
+        const status = await soundRef.current.getStatusAsync();
+        if (!status.isLoaded) return;
+
+        if (excludedRoutes.includes(pathname)) {
+          if (status.isPlaying) {
+            await soundRef.current.pauseAsync();
+            setIsPlaying(false);
+          }
+        } else {
+          if (!status.isPlaying) {
+            await soundRef.current.playAsync();
+            setIsPlaying(true);
           }
         }
-      } catch (error) {
-        console.warn('🎵 Audio management error:', error);
+      } catch (e) {
+        console.warn('Music route update error:', e);
       }
     };
-
-    manageAudio();
-
-    return () => {
-      // Cleanup when component unmounts
-      if (sound.current) {
-        sound.current.unloadAsync().catch(console.warn);
-      }
-    };
+    run();
   }, [pathname]);
 
   const contextValue = {
     isLoaded,
     isPlaying,
     toggleMusic: async () => {
-      if (sound.current) {
-        try {
-          const status = await sound.current.getStatusAsync();
-          if (status.isLoaded) {
-            if (status.isPlaying) {
-              await sound.current.pauseAsync();
-              setIsPlaying(false);
-            } else {
-              await sound.current.playAsync();
-              setIsPlaying(true);
-            }
-          }
-        } catch (error) {
-          console.warn('Music toggle error:', error);
+      try {
+        const s = soundRef.current;
+        if (!s) return;
+        const status = await s.getStatusAsync();
+        if (!status.isLoaded) return;
+        if (status.isPlaying) {
+          await s.pauseAsync();
+          setIsPlaying(false);
+        } else {
+          await s.playAsync();
+          setIsPlaying(true);
         }
+      } catch (e) {
+        console.warn('Music toggle error:', e);
       }
     },
   };
 
-  return (
-    <MusicContext.Provider value={contextValue}>
-      {children}
-    </MusicContext.Provider>
-  );
+  return <MusicContext.Provider value={contextValue}>{children}</MusicContext.Provider>;
 }

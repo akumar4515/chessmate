@@ -1,89 +1,83 @@
+// app/_layout.jsx
 import { Stack, usePathname } from 'expo-router';
 import { View, Dimensions, SafeAreaView, StatusBar } from 'react-native';
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { ExitConfirmProvider } from './components/ExitConfirmProvider';
+import { useAndroidConfirmExitOnHome } from './hooks/useAndroidConfirmAndExit';
+// NOTE: file name is clickSound.js (lowercase 'c'); adjust if different
+import { initClickSound, unloadClickSound } from './utils/ClickSound';
+
 import MusicProvider from './music.js';
 import BottomNav from './bottomNav.jsx';
-import SplashScreen from './splas-screen.jsx'; // Import splash screen
+import SplashScreen from './splas-screen.jsx';
 
-const { height: screenHeight } = Dimensions.get('window');
 const BOTTOM_NAV_HEIGHT = 80;
 
 export default function Layout() {
+  // Initialize and cleanup the click sound at app root
+  useEffect(() => {
+    initClickSound();
+    return () => { unloadClickSound(); };
+  }, []);
+
+  return (
+    <MusicProvider>
+      <ExitConfirmProvider>
+        <InnerLayout />
+      </ExitConfirmProvider>
+    </MusicProvider>
+  );
+}
+
+function InnerLayout() {
   const pathname = usePathname();
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
   const [showSplash, setShowSplash] = useState(true);
   const [isFirstLaunch, setIsFirstLaunch] = useState(true);
 
+  // Back handler hook runs inside provider
+  useAndroidConfirmExitOnHome();
+
   useEffect(() => {
-    console.log('Current route:', pathname);
-    
-    const subscription = Dimensions.addEventListener('change', ({ window }) => {
-      setDimensions(window);
-    });
-
-    // Check if this is first launch
+    const sub = Dimensions.addEventListener('change', ({ window }) => setDimensions(window));
     checkFirstLaunch();
-
-    return () => subscription?.remove();
+    return () => sub?.remove?.();
   }, [pathname]);
 
   const checkFirstLaunch = async () => {
     try {
       const hasLaunched = await AsyncStorage.getItem('hasLaunched');
       if (hasLaunched === null) {
-        // First launch - show splash for 3 seconds
         await AsyncStorage.setItem('hasLaunched', 'true');
-        setTimeout(() => {
-          setShowSplash(false);
-          setIsFirstLaunch(false);
-        }, 3000);
+        setTimeout(() => { setShowSplash(false); setIsFirstLaunch(false); }, 3000);
       } else {
-        // Not first launch - skip splash
-        setShowSplash(false);
-        setIsFirstLaunch(false);
+        setShowSplash(false); setIsFirstLaunch(false);
       }
-    } catch (error) {
-      console.error('Error checking first launch:', error);
-      // Fallback - show splash briefly
-      setTimeout(() => {
-        setShowSplash(false);
-        setIsFirstLaunch(false);
-      }, 1000);
+    } catch {
+      setTimeout(() => { setShowSplash(false); setIsFirstLaunch(false); }, 1000);
     }
   };
 
-  // Show splash screen if it's the first launch or still loading
-  if (showSplash || isFirstLaunch) {
-    return <SplashScreen />;
-  }
+  if (showSplash || isFirstLaunch) return <SplashScreen />;
 
-  const shouldShowBottomNav =
-    !showSplash &&
-    !['/chess', '/chessAi', '/chessMulti', '/introVideo'].includes(pathname);
-
-  // Instead of shrinking height, pad the bottom so content never sits under BottomNav
+  const shouldShowBottomNav = !['/chess', '/chessAi', '/chessMulti', '/introVideo'].includes(pathname);
   const contentBottomPadding = shouldShowBottomNav ? BOTTOM_NAV_HEIGHT : 0;
 
   return (
-    <MusicProvider>
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
-        <StatusBar barStyle="light-content" backgroundColor="#000000" />
-
-        {/* This padding ensures all pages wrap content within the visible area above BottomNav */}
-        <View style={{ flex: 1, paddingBottom: contentBottomPadding }}>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: '#000000' },
-              animation: 'slide_from_right',
-            }}
-          />
-        </View>
-
-        {shouldShowBottomNav && <BottomNav />}
-      </SafeAreaView>
-    </MusicProvider>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <View style={{ flex: 1, paddingBottom: contentBottomPadding }}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: '#000' },
+            animation: 'slide_from_right',
+          }}
+        />
+      </View>
+      {shouldShowBottomNav && <BottomNav />}
+    </SafeAreaView>
   );
 }

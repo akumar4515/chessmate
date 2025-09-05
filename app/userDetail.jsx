@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
+import { playClick } from './utils/ClickSound';
 
 const { width, height } = Dimensions.get('window');
 
@@ -227,13 +228,13 @@ export default function UserDetail() {
 
   const renderHeader = () => (
     <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+      <TouchableOpacity style={styles.backButton} onPress={() =>{playClick(), navigation.goBack()}}>
         <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
       </TouchableOpacity>
       
       <Text style={styles.headerTitle}>Profile Details</Text>
       
-      <TouchableOpacity style={styles.logoutIconButton} onPress={() => setConfirmLogoutModal(true)}>
+      <TouchableOpacity style={styles.logoutIconButton} onPress={() =>{playClick(), setConfirmLogoutModal(true)}}>
         <Ionicons name="log-out-outline" size={24} color="#FF4444" />
       </TouchableOpacity>
     </Animated.View>
@@ -267,7 +268,7 @@ export default function UserDetail() {
     <Animated.View style={[styles.profilePicSection, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
       <TouchableOpacity 
         style={styles.profilePicContainer}
-        onPress={handleChangeProfilePic}
+        onPress={()=>{playClick(),handleChangeProfilePic()}}
       >
         {profilePic ? (
           <Image source={{ uri: profilePic }} style={styles.profilePic} />
@@ -283,7 +284,7 @@ export default function UserDetail() {
         </View>
       </TouchableOpacity>
       
-      <TouchableOpacity style={styles.changePicButton} onPress={handleChangeProfilePic}>
+      <TouchableOpacity style={styles.changePicButton} onPress={()=>{playClick(),handleChangeProfilePic()}}>
         <Text style={styles.changePicText}>Change Profile Picture</Text>
       </TouchableOpacity>
     </Animated.View>
@@ -343,7 +344,7 @@ export default function UserDetail() {
             <Ionicons name="person" size={20} color="#FFFFFF" /> Personal Information
           </Text>
           {!editMode && (
-            <TouchableOpacity style={styles.editButton} onPress={() => setEditMode(true)}>
+            <TouchableOpacity style={styles.editButton} onPress={() =>{playClick(), setEditMode(true)}}>
               <Ionicons name="create-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           )}
@@ -376,7 +377,7 @@ export default function UserDetail() {
             </View>
 
             <View style={styles.editActions}>
-              <TouchableOpacity style={styles.saveButton} onPress={handleUpdate} disabled={loading}>
+              <TouchableOpacity style={styles.saveButton} onPress={()=>{playClick(),handleUpdate()}} disabled={loading}>
                 <View style={styles.saveButtonContent}>
                   {loading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
@@ -389,7 +390,7 @@ export default function UserDetail() {
                 </View>
               </TouchableOpacity>
               
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setEditMode(false)}>
+              <TouchableOpacity style={styles.cancelButton} onPress={() =>{playClick(), setEditMode(false)}}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -440,7 +441,7 @@ export default function UserDetail() {
           <Ionicons name="settings" size={20} color="#FFFFFF" /> Quick Actions
         </Text>
         
-        <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('index')}>
+        <TouchableOpacity style={styles.actionItem} onPress={() =>{playClick(), navigation.navigate('index')}}>
           <View style={styles.actionIcon}>
             <Ionicons name="home" size={24} color="#FFFFFF" />
           </View>
@@ -451,7 +452,7 @@ export default function UserDetail() {
           <Ionicons name="chevron-forward" size={20} color="#AAAAAA" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('Friend')}>
+        <TouchableOpacity style={styles.actionItem} onPress={() =>{playClick(), navigation.navigate('Friend')}}>
           <View style={styles.actionIcon}>
             <Ionicons name="people" size={24} color="#FFFFFF" />
           </View>
@@ -462,7 +463,7 @@ export default function UserDetail() {
           <Ionicons name="chevron-forward" size={20} color="#AAAAAA" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionItem} onPress={() => setConfirmLogoutModal(true)}>
+        <TouchableOpacity style={styles.actionItem} onPress={() =>{playClick(), setConfirmLogoutModal(true)}}>
           <View style={styles.actionIcon}>
             <Ionicons name="log-out" size={24} color="#FF4444" />
           </View>
@@ -516,7 +517,7 @@ export default function UserDetail() {
         visible={confirmLogoutModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setConfirmLogoutModal(false)}
+        onRequestClose={() =>{playClick(),setConfirmLogoutModal(false)}}
       >
         <View style={styles.modalContainer}>
           <Animated.View style={[styles.logoutModal, { transform: [{ scale: scaleAnim }] }]}>
@@ -527,7 +528,7 @@ export default function UserDetail() {
             </Text>
             
             <View style={styles.logoutModalActions}>
-              <TouchableOpacity style={styles.logoutConfirmButton} onPress={handleLogout}>
+              <TouchableOpacity style={styles.logoutConfirmButton} onPress={()=>{playClick(),handleLogout()}}>
                 <View style={styles.logoutConfirmContent}>
                   <Text style={styles.logoutConfirmText}>Logout</Text>
                 </View>
@@ -535,7 +536,7 @@ export default function UserDetail() {
               
               <TouchableOpacity 
                 style={styles.logoutCancelButton} 
-                onPress={() => setConfirmLogoutModal(false)}
+                onPress={() =>{playClick(), setConfirmLogoutModal(false)}}
               >
                 <Text style={styles.logoutCancelText}>Cancel</Text>
               </TouchableOpacity>
