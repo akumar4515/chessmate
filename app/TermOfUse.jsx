@@ -2,18 +2,19 @@
 import React from 'react';
 import { SafeAreaView, StatusBar, ScrollView, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { playClick } from './utils/ClickSound';
+import { useRouter } from 'expo-router';
+import { ClickSoundContext } from './clickSound';
 
 export default function TermsOfUse() {
-  const navigation = useNavigation();
+  const router = useRouter();
+  const clickSoundContext = React.useContext(ClickSoundContext);
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() =>{playClick(), navigation.goBack()}} style={styles.backBtn}>
+        <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.back()}} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={22} color="#EDEDED" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Terms of Use</Text>
@@ -93,7 +94,7 @@ export default function TermsOfUse() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 45, backgroundColor: '#0F0F0F' },
+  container: { flex: 1, backgroundColor: '#0F0F0F',paddingTop: 30, },
   header: { paddingHorizontal: 16, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#1C1C1C', borderWidth: 1, borderColor: '#333' },
   headerTitle: { color: '#EDEDED', fontSize: 22, fontWeight: '700' },

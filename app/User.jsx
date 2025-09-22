@@ -13,27 +13,41 @@ import {
   ActivityIndicator,
   Image,
   ScrollView,
+  Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { playClick } from './utils/ClickSound';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { ClickSoundContext } from './clickSound';
+import { Ionicons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
 const API_URL = 'https://chessmate-backend-lfxo.onrender.com/api';
 
+
+// Responsive calculations
+const isTablet = width > 768;
+const isSmallScreen = height < 700;
+const isLargeScreen = height > 800;
+
+// Global cache for user data
+let userDataCache = null;
+let isRefreshing = false;
+
 export default function AuthPage() {
   const router = useRouter();
+  const clickSoundContext = React.useContext(ClickSoundContext);
 
   const [formType, setFormType] = useState('login');
   const [formData, setFormData] = useState({ username: '', email: '', password: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [backPressedOnce, setBackPressedOnce] = useState(false);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(userDataCache); // Initialize with cached data
   const [editMode, setEditMode] = useState(false);
   const [editFormData, setEditFormData] = useState({ username: '', email: '' });
   const [profilePic, setProfilePic] = useState(null);
@@ -46,37 +60,84 @@ export default function AuthPage() {
     messageTimeoutRef.current = setTimeout(() => { setError(''); setSuccessMessage(''); messageTimeoutRef.current = null; }, 3000);
   };
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        setLoading(true);
-        const token = await AsyncStorage.getItem('token');
-        const userData = await AsyncStorage.getItem('user');
-        if (token && userData) {
-          const parsed = JSON.parse(userData);
-          const tokenRes = await axios.get(`${API_URL}/verify-token`, { headers: { Authorization: `Bearer ${token}` } });
-          if (tokenRes.data.valid && !parsed.guest) {
-            const full = await axios.get(`${API_URL}/user`, { headers: { Authorization: `Bearer ${token}` } });
-            setUser(full.data.user);
-            setEditFormData({ username: full.data.user.username || '', email: full.data.user.email || '' });
-            setProfilePic(full.data.user.profilePic || null);
-            await AsyncStorage.setItem('user', JSON.stringify(full.data.user));
-          } else if (parsed.guest) {
-            setUser(parsed);
-          } else {
-            await AsyncStorage.removeItem('user'); await AsyncStorage.removeItem('token'); setUser(null);
-          }
+  // Function to refresh user data in background
+  const refreshUserData = async (showLoading = false) => {
+    if (isRefreshing) return; // Prevent multiple simultaneous refreshes
+    
+    try {
+      isRefreshing = true;
+      if (showLoading) setLoading(true);
+      
+      const token = await AsyncStorage.getItem('token');
+      const userData = await AsyncStorage.getItem('user');
+      
+      if (token && userData) {
+        const parsed = JSON.parse(userData);
+        const tokenRes = await axios.get(`${API_URL}/verify-token`, { 
+          headers: { Authorization: `Bearer ${token}` } 
+        });
+        
+        if (tokenRes.data.valid) {
+          const full = await axios.get(`${API_URL}/user`, { 
+            headers: { Authorization: `Bearer ${token}` } 
+          });
+          
+          // Update cache and state
+          userDataCache = full.data.user;
+          setUser(full.data.user);
+          setEditFormData({ 
+            username: full.data.user.username || '', 
+            email: full.data.user.email || '' 
+          });
+          setProfilePic(full.data.user.profilePic || null);
+          await AsyncStorage.setItem('user', JSON.stringify(full.data.user));
+        } else {
+          userDataCache = null;
+          await AsyncStorage.removeItem('user'); 
+          await AsyncStorage.removeItem('token'); 
+          setUser(null);
         }
-      } catch (e) {
-        console.error('Auth check error:', e);
-        showMessage('Failed to load user data', 'error');
-        setUser(null);
-      } finally {
-        setLoading(false);
+      }
+    } catch (e) {
+      console.error('Background refresh error:', e);
+      // Don't show error for background refresh
+    } finally {
+      isRefreshing = false;
+      if (showLoading) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const initializeUserData = async () => {
+      // If we have cached data, show it immediately and refresh in background
+      if (userDataCache) {
+        setUser(userDataCache);
+        setEditFormData({ 
+          username: userDataCache.username || '', 
+          email: userDataCache.email || '' 
+        });
+        setProfilePic(userDataCache.profilePic || null);
+        
+        // Refresh data in background without showing loading
+        refreshUserData(false);
+      } else {
+        // No cached data, show loading and fetch data
+        refreshUserData(true);
       }
     };
-    checkAuth();
+    
+    initializeUserData();
   }, []);
+
+  // Refresh data when user navigates back to this page
+  useFocusEffect(
+    React.useCallback(() => {
+      // Only refresh if we already have user data (not on initial load)
+      if (userDataCache && user) {
+        refreshUserData(false);
+      }
+    }, [user])
+  );
 
   useEffect(() => () => { if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current); }, []);
 
@@ -117,12 +178,13 @@ export default function AuthPage() {
 
   const handleUpdate = async () => {
   if (!validateEditForm()) return;
-  setLoading(true);
+  setUpdatingProfile(true);
   try {
     const token = await AsyncStorage.getItem('token');
     const res = await axios.put(`${API_URL}/user`, editFormData, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    userDataCache = res.data.user; // Update cache
     setUser(res.data.user);
     setEditMode(false);
     await AsyncStorage.setItem('user', JSON.stringify(res.data.user));
@@ -131,7 +193,7 @@ export default function AuthPage() {
     console.error('Update profile error:', e);
     showMessage(e.response?.data?.message || 'Failed to update profile', 'error');
   } finally {
-    setLoading(false);
+    setUpdatingProfile(false);
   }
 };
 
@@ -152,6 +214,7 @@ export default function AuthPage() {
       } else {
         await AsyncStorage.setItem('user', JSON.stringify(res.data.user));
         await AsyncStorage.setItem('token', res.data.token);
+        userDataCache = res.data.user; // Update cache
         setUser(res.data.user);
         setEditFormData({ username: res.data.user.username || '', email: res.data.user.email || '' });
         setProfilePic(res.data.user.profilePic || null);
@@ -166,93 +229,51 @@ export default function AuthPage() {
     }
   };
 
-  const handleGuest = async () => {
-    try {
-      await AsyncStorage.setItem('user', JSON.stringify({ guest: true, username: 'Guest' }));
-      setUser({ guest: true, username: 'Guest' });
-    } catch (e) {
-      console.error('Guest error:', e);
-      showMessage('Navigation failed, please try again', 'error');
-    }
-  };
 
   const handleLogout = async () => {
     try {
-      await AsyncStorage.removeItem('user'); await AsyncStorage.removeItem('token');
+      // Clear all user data
+      await AsyncStorage.removeItem('user'); 
+      await AsyncStorage.removeItem('token');
+      
+      // Clear cache
+      userDataCache = null;
+      
+      // Reset all state
       setUser(null);
-      if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; }
-      setError(''); setSuccessMessage(''); setEditMode(false); setProfilePic(null);
+      setEditMode(false);
+      setProfilePic(null);
+      setError('');
+      setSuccessMessage('');
+      
+      // Clear any pending timeouts
+      if (messageTimeoutRef.current) { 
+        clearTimeout(messageTimeoutRef.current); 
+        messageTimeoutRef.current = null; 
+      }
+      
+      console.log('Logout successful');
     } catch (e) {
       console.error('Logout error:', e);
       showMessage('Failed to logout, please try again', 'error');
     }
   };
 
-  const handleChangeProfilePic = async () => {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) {
-    showMessage('Permission to access media library denied', 'error');
-    return;
-  }
 
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    allowsEditing: true,
-    aspect: [1, 1],
-    quality: 0.9,
-  });
-
-  if (result.canceled) return;
-
-  // newer API: assets is an array
-  const asset = result.assets && result.assets[0];
-  if (!asset || !asset.uri) {
-    showMessage('Failed to pick image', 'error');
-    return;
-  }
-
-  setLoading(true);
-  try {
-    const token = await AsyncStorage.getItem('token');
-
-    const form = new FormData();
-    // On Android the uri will typically work fine. Name & type are required.
-    form.append('profilePic', {
-      uri: asset.uri,
-      name: 'profile.jpg',
-      type: 'image/jpeg',
-    });
-
-    const res = await axios.post(`${API_URL}/upload-profile-pic`, form, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-
-    // backend returns path like /Uploads/xxx
-    const returnedPath = res.data.profilePic;
-    const fullUrl = `${API_BASE}${returnedPath}`;
-
-    setProfilePic(returnedPath); // keep server path in state too if you want
-    setUser((prev) => ({ ...prev, profilePic: returnedPath }));
-    // Save full user to AsyncStorage (store server path, or fullUrl if you prefer)
-    await AsyncStorage.setItem('user', JSON.stringify({ ...user, profilePic: returnedPath }));
-
-    showMessage('Profile picture updated successfully', 'success');
-  } catch (e) {
-    console.error('Upload error:', e);
-    showMessage('Failed to update profile picture', 'error');
-  } finally {
-    setLoading(false);
-  }
-};
 
   if (loading && !user) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#AAAAAA" />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <View style={styles.loadingContent}>
+          <Text style={styles.loadingTitle}>
+            {formType === 'login' ? 'Logging in please wait...' : 'Creating account...'}
+          </Text>
+          <View style={styles.loadingDots}>
+            <Text style={[styles.loadingDot, { opacity: 0.3 }]}>.</Text>
+            <Text style={[styles.loadingDot, { opacity: 0.6 }]}>.</Text>
+            <Text style={[styles.loadingDot, { opacity: 1.0 }]}>.</Text>
+          </View>
+        </View>
       </SafeAreaView>
     );
   }
@@ -292,46 +313,46 @@ const rate = { [grade]: true };
           <>
             {/* Top bar */}
             <View style={styles.topBar}>
-              <TouchableOpacity onPress={() =>{playClick(), router.push('/')}} activeOpacity={0.85}>
+              <TouchableOpacity onPress={async ()=>{await clickSoundContext?.playClick?.(), router.push('/')}} activeOpacity={0.85}>
                 <LinearGradient colors={['#1E1E1E', '#151515']} style={styles.topBarBtn}><Text style={styles.topBarBtnText}>← Home</Text></LinearGradient>
               </TouchableOpacity>
               <Text style={styles.topBarTitle}>My Account</Text>
-              <TouchableOpacity onPress={()=>{playClick(),handleLogout()}} activeOpacity={0.85}>
+              <TouchableOpacity onPress={async ()=>{await clickSoundContext?.playClick?.(), setShowLogoutModal(true)}} activeOpacity={0.85}>
                 <LinearGradient colors={['#FF6B6B', '#FF8E8E']} style={styles.topBarBtn}><Text style={styles.topBarBtnText}>Logout</Text></LinearGradient>
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.scrollableContent} contentContainerStyle={styles.scrollContainer}>
               {/* Avatar Card */}
-              {!user.guest && (
+              {user && (
                 <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.cardOuter}>
                   <View style={styles.cardInner}>
                     <View style={styles.avatarWrap}>
                       {profilePic ? (
-                         <Image source={{ uri: `${API_BASE}${profilePic}` }} style={styles.profilePic} />
+                         <Image source={{ uri: `${API_URL}${profilePic}` }} style={styles.profilePic} />
                       ) : (
                         <View style={styles.placeholderPic}><Text style={styles.placeholderText}>{user?.username[0]?.toUpperCase() || 'U'}</Text></View>
                       )}
                     </View>
-                    <TouchableOpacity onPress={()=>{playClick(),handleChangeProfilePic()}} activeOpacity={0.9}>
-                      <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.primaryBtn}>
-                        <Text style={styles.primaryBtnText}>Upload New Photo</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
                   </View>
                 </LinearGradient>
               )}
 
               {/* Quick Links */}
               <View style={styles.quickLinksRow}>
-                <TouchableOpacity onPress={() =>{playClick(), router.push('/setting')}} activeOpacity={0.9} style={{ flex: 1 }}>
+                <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.push('/setting')}} activeOpacity={0.9} style={{ flex: 1 }}>
                   <LinearGradient colors={['#1F1F1F', '#161616']} style={styles.quickLink}><Text style={styles.quickLinkText}>⚙️ Settings</Text></LinearGradient>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() =>{playClick(), router.push('/Items')}} activeOpacity={0.9} style={{ flex: 1 }}>
+                {/* <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.push('/Items')}} activeOpacity={0.9} style={{ flex: 1 }}>
                   <LinearGradient colors={['#1F1F1F', '#161616']} style={styles.quickLink}><Text style={styles.quickLinkText}>🎒 Items</Text></LinearGradient>
-                </TouchableOpacity>
-                  <TouchableOpacity onPress={() =>{playClick(), router.push('/Friend')}} activeOpacity={0.9} style={{ flex: 1 }}>
-                  <LinearGradient colors={['#1F1F1F', '#161616']} style={styles.quickLink}><Text style={styles.quickLinkText}>👥 Friends</Text></LinearGradient>
+                </TouchableOpacity> */}
+                  <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.push('/Friend')}} activeOpacity={0.9} style={{ flex: 1 }}>
+                  <LinearGradient colors={['#1F1F1F', '#161616']} style={styles.quickLink}>
+                    <View style={styles.quickLinkContent}>
+                      <Ionicons name="people" size={16} color="#FFFFFF" />
+                      <Text style={styles.quickLinkText}>Friends</Text>
+                    </View>
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
 
@@ -364,7 +385,7 @@ const rate = { [grade]: true };
               </LinearGradient>
 
               {/* Edit Card */}
-              {!user.guest && (
+              {user && (
                 <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.cardOuter}>
                   <View style={styles.cardInner}>
                     {editMode ? (
@@ -372,15 +393,23 @@ const rate = { [grade]: true };
                         <Text style={styles.sectionTitle}>Edit Profile</Text>
                         <View style={styles.inputGroup}><Text style={styles.inputLabel}>Username</Text><TextInput style={styles.input} value={editFormData.username} onChangeText={(v) => handleEditInputChange('username', v)} placeholder="Enter username" placeholderTextColor="#888" autoCapitalize="none" /></View>
                         <View style={styles.inputGroup}><Text style={styles.inputLabel}>Email</Text><TextInput style={styles.input} value={editFormData.email} onChangeText={(v) => handleEditInputChange('email', v)} placeholder="Enter email" placeholderTextColor="#888" autoCapitalize="none" keyboardType="email-address" /></View>
-                        <TouchableOpacity onPress={()=>{playClick(),handleUpdate()}} activeOpacity={0.9}>
-                          <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Save Changes</Text></LinearGradient>
+                        <TouchableOpacity 
+                          onPress={async ()=>{await clickSoundContext?.playClick?.(), handleUpdate()}} 
+                          activeOpacity={0.9}
+                          disabled={updatingProfile}
+                        >
+                          <LinearGradient colors={updatingProfile ? ['#666', '#555'] : ['#4ECDC4', '#6BCEC4']} style={[styles.primaryBtn, updatingProfile && styles.disabledBtn]}>
+                            <Text style={styles.primaryBtnText}>
+                              {updatingProfile ? 'Updating...' : 'Save Changes'}
+                            </Text>
+                          </LinearGradient>
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() =>{playClick(), setEditMode(false)}} activeOpacity={0.85} style={{ marginTop: 10 }}>
+                        <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), setEditMode(false)}} activeOpacity={0.85} style={{ marginTop: 10 }}>
                           <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>Cancel</Text></LinearGradient>
                         </TouchableOpacity>
                       </>
                     ) : (
-                      <TouchableOpacity onPress={() =>{playClick(), setEditMode(true)}} activeOpacity={0.9}>
+                      <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), setEditMode(true)}} activeOpacity={0.9}>
                         <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Edit Profile</Text></LinearGradient>
                       </TouchableOpacity>
                     )}
@@ -388,22 +417,16 @@ const rate = { [grade]: true };
                 </LinearGradient>
               )}
 
-              {/* Guest Note */}
-              {user.guest && (
-                <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.cardOuter}>
-                  <View style={styles.cardInner}><Text style={styles.guestNote}>Playing as Guest with limited features</Text></View>
-                </LinearGradient>
-              )}
             </ScrollView>
           </>
         ) : (
           <>
             {/* Toggle */}
             <View style={styles.toggleWrap}>
-              <TouchableOpacity onPress={() => {playClick(), setFormType('login'); if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; } setError(''); setSuccessMessage(''); setFormData({ username: '', email: '', password: '', confirmPassword: '' }); }} style={[styles.toggleBtn, formType === 'login' && styles.toggleActive]}>
+              <TouchableOpacity onPress={() => {clickSoundContext?.playClick?.(), setFormType('login'); if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; } setError(''); setSuccessMessage(''); setFormData({ username: '', email: '', password: '', confirmPassword: '' }); }} style={[styles.toggleBtn, formType === 'login' && styles.toggleActive]}>
                 <Text style={[styles.toggleText, formType === 'login' && styles.toggleTextActive]}>🔐 Login</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => {playClick(), setFormType('signup'); if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; } setError(''); setSuccessMessage(''); setFormData({ username: '', email: '', password: '', confirmPassword: '' }); }} style={[styles.toggleBtn, formType === 'signup' && styles.toggleActive]}>
+              <TouchableOpacity onPress={() => {clickSoundContext?.playClick?.(), setFormType('signup'); if (messageTimeoutRef.current) { clearTimeout(messageTimeoutRef.current); messageTimeoutRef.current = null; } setError(''); setSuccessMessage(''); setFormData({ username: '', email: '', password: '', confirmPassword: '' }); }} style={[styles.toggleBtn, formType === 'signup' && styles.toggleActive]}>
                 <Text style={[styles.toggleText, formType === 'signup' && styles.toggleTextActive]}>📝 Sign Up</Text>
               </TouchableOpacity>
             </View>
@@ -419,25 +442,62 @@ const rate = { [grade]: true };
                   <View style={styles.inputGroup}><Text style={styles.inputLabel}>🔒 Password</Text><TextInput style={styles.input} value={formData.password} onChangeText={(v) => handleInputChange('password', v)} placeholder="Enter your password" placeholderTextColor="#888" secureTextEntry /></View>
                   {formType === 'signup' && (<View style={styles.inputGroup}><Text style={styles.inputLabel}>🔒 Confirm Password</Text><TextInput style={styles.input} value={formData.confirmPassword} onChangeText={(v) => handleInputChange('confirmPassword', v)} placeholder="Confirm password" placeholderTextColor="#888" secureTextEntry /></View>)}
 
-                  <TouchableOpacity onPress={()=>{playClick(),handleSubmit()}} activeOpacity={0.9}>
+                  <TouchableOpacity onPress={()=>{clickSoundContext?.playClick?.(),handleSubmit()}} activeOpacity={0.9}>
                     <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>{formType === 'login' ? '🚀 Login' : '✨ Create Account'}</Text></LinearGradient>
                   </TouchableOpacity>
 
-                  <TouchableOpacity onPress={()=>{playClick(),handleGuest()}} activeOpacity={0.9} style={{ marginTop: 12 }}>
-                    <LinearGradient colors={['#1F1F1F', '#161616']} style={styles.secondaryBtn}><Text style={styles.secondaryBtnText}>👤 Continue as Guest</Text></LinearGradient>
-                  </TouchableOpacity>
                 </View>
               </LinearGradient>
             </ScrollView>
           </>
         )}
+
+
+        {/* Logout Confirmation Modal */}
+        <Modal
+          visible={showLogoutModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowLogoutModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Logout Confirmation</Text>
+                <Text style={styles.modalMessage}>Are you sure you want to logout?</Text>
+                
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity 
+                    onPress={async ()=>{await clickSoundContext?.playClick?.(), setShowLogoutModal(false)}} 
+                    activeOpacity={0.85}
+                    style={styles.modalButton}
+                  >
+                    <LinearGradient colors={['#666', '#555']} style={styles.modalButtonGradient}>
+                      <Text style={styles.modalButtonText}>Cancel</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    onPress={async ()=>{await clickSoundContext?.playClick?.(), setShowLogoutModal(false), handleLogout()}} 
+                    activeOpacity={0.85}
+                    style={styles.modalButton}
+                  >
+                    <LinearGradient colors={['#FF6B6B', '#FF8E8E']} style={styles.modalButtonGradient}>
+                      <Text style={styles.modalButtonText}>Yes, Logout</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </LinearGradient>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 35, backgroundColor: '#0F0F0F' },
+  container: { flex: 1, backgroundColor: '#0F0F0F',paddingTop: 30, },
   keyboardAvoidingView: { flex: 1 },
   header: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#222' },
   appTitle: { color: '#FFFFFF', fontSize: 30, fontWeight: 'bold', marginBottom: 6 },
@@ -466,12 +526,19 @@ const styles = StyleSheet.create({
 
   primaryBtn: { paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
   primaryBtnText: { color: '#0B0B0B', fontWeight: '800' },
+  disabledBtn: { opacity: 0.6 },
   secondaryBtn: { paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#2A2A2A' },
   secondaryBtnText: { color: '#EDEDED', fontWeight: '700' },
 
   quickLinksRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
   quickLink: { paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#2A2A2A' },
   quickLinkText: { color: '#FFFFFF', fontWeight: '800' },
+  quickLinkContent: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    gap: 6
+  },
 
   sectionTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', marginBottom: 10 },
   infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#2A2A2A' },
@@ -501,6 +568,83 @@ const styles = StyleSheet.create({
   authScrollView: { flex: 1 },
   authScrollContainer: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 24, paddingTop: 10 },
 
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { color: '#AAAAAA', fontSize: 16, marginTop: 12 },
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    backgroundColor: '#0F0F0F'
+  },
+  loadingContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingTitle: { 
+    color: '#FFFFFF', 
+    fontSize: 18, 
+    fontWeight: '600',
+    marginBottom: 20,
+    textAlign: 'center'
+  },
+  loadingDots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingDot: {
+    color: '#4ECDC4',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginHorizontal: 2,
+  },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '80%',
+    maxWidth: 300,
+  },
+  modalContent: {
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    color: '#AAAAAA',
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+  },
+  modalButtonGradient: {
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
 });

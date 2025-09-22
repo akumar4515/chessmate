@@ -20,50 +20,14 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { playClick } from './utils/ClickSound';
+import { useRouter } from 'expo-router';
+// Click sound is now handled by context
+import { MusicContext } from './music';
+import { ClickSoundContext } from './clickSound';
 
 
 import * as Application from 'expo-application';
-import { Audio } from 'expo-av'; // mic permission (expo-av/expo-audio)
-import * as Notifications from 'expo-notifications';
-import * as MediaLibrary from 'expo-media-library';
 
-// Permission helpers
-async function getMic() {
-  // For newer SDKs, also see expo-audio's getRecordingPermissionsAsync/requestRecordingPermissionsAsync
-  try { return await Audio.getPermissionsAsync?.() ?? await Audio.getRecordingPermissionsAsync?.(); }
-  catch { return { granted: false, canAskAgain: true }; }
-}
-async function askMic() {
-  try { return await Audio.requestPermissionsAsync?.() ?? await Audio.requestRecordingPermissionsAsync?.(); }
-  catch { return { granted: false, canAskAgain: false }; }
-}
-
-async function getNotif() {
-  try { return await Notifications.getPermissionsAsync(); }
-  catch { return { granted: false, canAskAgain: true, ios: { status: 0 } }; }
-}
-async function askNotif() {
-  try {
-    return await Notifications.requestPermissionsAsync({
-      ios: { allowAlert: true, allowBadge: true, allowSound: true },
-    });
-  } catch { return { granted: false, canAskAgain: false, ios: { status: 0 } }; }
-}
-
-// Use granular images/videos scopes on Android 13+
-async function getPhotos() {
-  try { return await MediaLibrary.getPermissionsAsync(false, ['photo', 'video']); }
-  catch { return { granted: false, canAskAgain: true }; }
-}
-async function askPhotos() {
-  try { return await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']); }
-  catch { return { granted: false, canAskAgain: false }; }
-}
-
-// Treat iOS provisional as allowed in UI
-const isNotifAllowed = (res) => res?.granted === true || res?.ios?.status === 1;
 
 function StatusPill({ ok }) {
   return (
@@ -71,47 +35,26 @@ function StatusPill({ ok }) {
       styles.pill,
       { backgroundColor: ok ? '#1F3B39' : '#3A1C1C', borderColor: ok ? '#2C6E6A' : '#8A2E2E' }
     ]}>
-      <Text style={{ color: ok ? '#4ECDC4' : '#FF6B6B', fontWeight: '700', fontSize: 12 }}>
-        {ok ? 'Granted' : 'Not granted'}
-      </Text>
+      <View style={{
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: ok ? '#4ECDC4' : '#FF6B6B'
+      }} />
     </View>
   );
 }
 
-function PermissionToggleRow({ icon, title, subtitle, value, onChange }) {
-  return (
-    <View style={styles.row}>
-      <View style={styles.rowLeft}>
-        <View style={styles.rowIconWrap}>
-          <Feather name={icon} size={18} color="#4ECDC4" />
-        </View>
-        <View>
-          <Text style={styles.rowTitle}>{title}</Text>
-          <Text style={styles.rowSubtitle}>{subtitle}</Text>
-        </View>
-      </View>
-      <View style={styles.rowRight}>
-        <StatusPill ok={value} />
-        <Switch
-          trackColor={{ false: '#555', true: '#2C6E6A' }}
-          thumbColor={value ? '#4ECDC4' : '#999'}
-          ios_backgroundColor="#3e3e3e"
-          value={value}
-          onValueChange={onChange}
-        />
-      </View>
-    </View>
-  );
-}
 
 export default function Settings() {
-  const navigation = useNavigation();
+  const router = useRouter();
   const [user, setUser] = useState(null);
+  const musicContext = React.useContext(MusicContext);
+  const clickSoundContext = React.useContext(ClickSoundContext);
 
-  // Permission states
-  const [mic, setMic] = useState({ granted: false, canAskAgain: true });
-  const [notif, setNotif] = useState({ granted: false, canAskAgain: true, ios: { status: 0 } });
-  const [photos, setPhotos] = useState({ granted: false, canAskAgain: true });
+  
+  // Music preference state - will be overridden by context
+  const [musicEnabled, setMusicEnabled] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -119,33 +62,20 @@ export default function Settings() {
       try {
         const u = await AsyncStorage.getItem('user');
         if (mounted && u) setUser(JSON.parse(u));
+        
+        // Music preference is now managed by music context
       } catch {}
-      const m = await getMic();
-      const n = await getNotif();
-      const p = await getPhotos();
-      if (!mounted) return;
-      setMic(m);
-      setNotif(n);
-      setPhotos(p);
     })();
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') {
-        (async () => {
-          const m = await getMic();
-          const n = await getNotif();
-          const p = await getPhotos();
-          setMic(m);
-          setNotif(n);
-          setPhotos(p);
-        })();
       }
     });
     return () => { mounted = false; sub.remove(); };
   }, []);
 
-  const appName = Application.applicationName ?? 'ChessMate';
-  const appVersion = Application.nativeApplicationVersion ?? '—';
-  const buildNumber = Application.nativeBuildVersion ?? '—';
+  const appName ='ChessMate';
+  const appVersion = '1.0.0'
+  const company ='Skynetix';
 
   const openSettings = () => Linking.openSettings().catch(() => {});
 
@@ -154,7 +84,7 @@ export default function Settings() {
       <StatusBar barStyle="light-content" />
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() =>{playClick(), navigation.goBack()}} style={styles.backBtn}>
+        <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.back()}} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={22} color="#EDEDED" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
@@ -174,7 +104,7 @@ export default function Settings() {
                 <Text style={styles.profileName}>{user?.username ?? 'Guest'}</Text>
                 <Text style={styles.profileEmail}>{user?.email ?? 'Not signed in'}</Text>
               </View>
-              <TouchableOpacity onPress={() =>{playClick(), navigation.navigate('User')}}>
+              <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.push('/User')}}>
                 <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.smallBtn}>
                   <Text style={styles.smallBtnText}>View Profile</Text>
                 </LinearGradient>
@@ -187,10 +117,10 @@ export default function Settings() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Your items</Text>
           <View style={styles.card}>
-            <TouchableOpacity onPress={() =>{playClick(), navigation.navigate('Items')}} activeOpacity={0.85} style={styles.row}>
+            <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.push('/Items')}} activeOpacity={0.85} style={styles.row}>
               <View style={styles.rowLeft}>
                 <View style={styles.rowIconWrap}>
-                  <Feather name="box" size={18} color="#4ECDC4" />
+                  <Feather name="package" size={18} color="#4ECDC4" />
                 </View>
                 <View>
                   <Text style={styles.rowTitle}>Inventory</Text>
@@ -206,7 +136,7 @@ export default function Settings() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Privacy & policy</Text>
           <View style={styles.card}>
-            <TouchableOpacity onPress={() =>{playClick(), navigation.navigate('Privacy')}} activeOpacity={0.85} style={styles.row}>
+            <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.push('/Privacy')}} activeOpacity={0.85} style={styles.row}>
               <View style={styles.rowLeft}>
                 <View style={styles.rowIconWrap}>
                   <Feather name="shield" size={18} color="#4ECDC4" />
@@ -219,10 +149,10 @@ export default function Settings() {
               <Feather name="chevron-right" size={20} color="#777" />
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() =>{playClick(), navigation.navigate('TermOfUse')}} activeOpacity={0.85} style={styles.row}>
+            <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.push('/TermOfUse')}} activeOpacity={0.85} style={styles.row}>
               <View style={styles.rowLeft}>
                 <View style={styles.rowIconWrap}>
-                  <Feather name="file-text" size={18} color="#4ECDC4" />
+                  <Feather name="file" size={18} color="#4ECDC4" />
                 </View>
                 <View>
                   <Text style={styles.rowTitle}>Terms of Use</Text>
@@ -234,60 +164,93 @@ export default function Settings() {
           </View>
         </View>
 
-        {/* Permissions */}
+        {/* Audio Settings */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Permissions</Text>
+          <Text style={styles.sectionTitle}>Audio Settings</Text>
           <View style={styles.card}>
-            {/* Mic */}
-            <PermissionToggleRow
-              icon="mic"
-              title="Microphone"
-              subtitle="Voice and in-game chat"
-              value={!!mic.granted}
-              onChange={async (val) => {
-                if (val) {
-                  const res = await askMic();
-                  setMic(res);
-                  if (!res.granted && res.canAskAgain === false) openSettings();
-                } else {
-                  openSettings(); // revocation happens in OS settings
-                }
-              }}
-            />
-            {/* Notifications */}
-            <PermissionToggleRow
-              icon="bell"
-              title="Notifications"
-              subtitle="Invites and game updates"
-              value={isNotifAllowed(notif)}
-              onChange={async (val) => {
-                if (val) {
-                  const res = await askNotif();
-                  setNotif(res);
-                  if (!isNotifAllowed(res) && res.canAskAgain === false) openSettings();
-                } else {
-                  openSettings();
-                }
-              }}
-            />
-            {/* Photos */}
-            <PermissionToggleRow
-              icon="image"
-              title="Photos / Media"
-              subtitle="Pick avatars and share images"
-              value={!!photos.granted}
-              onChange={async (val) => {
-                if (val) {
-                  const res = await askPhotos();
-                  setPhotos(res);
-                  if (!res.granted && res.canAskAgain === false) openSettings();
-                } else {
-                  openSettings();
-                }
-              }}
-            />
+            <View style={styles.row}>
+              <View style={styles.rowLeft}>
+                <View style={styles.rowIconWrap}>
+                  <Feather name="music" size={18} color="#4ECDC4" />
+                </View>
+                <View>
+                  <Text style={styles.rowTitle}>Background Music</Text>
+                  <Text style={styles.rowSubtitle}>Play music in the background</Text>
+                </View>
+              </View>
+              <View style={styles.rowRight}>
+                <StatusPill ok={musicContext?.isPlaying} />
+                <Switch
+                  trackColor={{ false: '#555', true: '#2C6E6A' }}
+                  thumbColor={musicContext?.musicEnabled ? '#4ECDC4' : '#999'}
+                  ios_backgroundColor="#3e3e3e"
+                  value={musicContext?.musicEnabled || false}
+                  onValueChange={async (val) => {
+                    clickSoundContext?.playClick?.();
+                    
+                    // Update music context state
+                    if (musicContext?.setMusicEnabled) {
+                      musicContext.setMusicEnabled(val);
+                    }
+                    
+                    // Save preference
+                    try {
+                      await AsyncStorage.setItem('musicEnabled', val.toString());
+                    } catch (error) {
+                      console.error('Error saving music preference:', error);
+                    }
+                    
+                    // Control music based on preference
+                    if (musicContext?.toggleMusic) {
+                      // If music is currently playing but user wants it off, pause it
+                      if (musicContext.isPlaying && !val) {
+                        await musicContext.toggleMusic();
+                      }
+                      // If music is not playing but user wants it on, play it
+                      else if (!musicContext.isPlaying && val) {
+                        await musicContext.toggleMusic();
+                      }
+                    }
+                  }}
+                />
+              </View>
+            </View>
           </View>
         </View>
+
+        {/* Click Sound Toggle */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sound Effects</Text>
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <View style={styles.rowLeft}>
+                <View style={styles.rowIconWrap}>
+                  <Feather name="volume-2" size={18} color="#4ECDC4" />
+                </View>
+                <View>
+                  <Text style={styles.rowTitle}>Click Sounds</Text>
+                  <Text style={styles.rowSubtitle}>Play sound when tapping buttons</Text>
+                </View>
+              </View>
+              <View style={styles.rowRight}>
+                <StatusPill ok={clickSoundContext?.clickSoundEnabled} />
+                <Switch
+                  trackColor={{ false: '#555', true: '#2C6E6A' }}
+                  thumbColor={clickSoundContext?.clickSoundEnabled ? '#4ECDC4' : '#999'}
+                  ios_backgroundColor="#3e3e3e"
+                  value={clickSoundContext?.clickSoundEnabled || false}
+                  onValueChange={async (val) => {
+                    // Don't play click sound when toggling click sound itself
+                    if (clickSoundContext?.setClickSoundEnabled) {
+                      clickSoundContext.setClickSoundEnabled(val);
+                    }
+                  }}
+                />
+              </View>
+            </View>
+          </View>
+        </View>
+
 
         {/* Version */}
         <View style={styles.section}>
@@ -301,7 +264,7 @@ export default function Settings() {
                 <View>
                   <Text style={styles.rowTitle}>{appName}</Text>
                   <Text style={styles.rowSubtitle}>
-                    Version {appVersion} • Build {buildNumber}
+                    Version {appVersion} • {company}
                   </Text>
                 </View>
               </View>
@@ -317,8 +280,8 @@ export default function Settings() {
                 await AsyncStorage.removeItem('token');
                 await AsyncStorage.removeItem('user');
               } catch {}
-              playClick(),
-              navigation.navigate('User');
+              clickSoundContext?.playClick?.(),
+              router.push('/User');
             }}
             style={styles.logoutBtn}
           >
@@ -334,7 +297,7 @@ export default function Settings() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 45, backgroundColor: '#0F0F0F' },
+  container: { flex: 1, backgroundColor: '#0F0F0F',paddingTop: 30, },
   header: { paddingHorizontal: 16, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#1C1C1C', borderWidth: 1, borderColor: '#333' },
   headerTitle: { color: '#EDEDED', fontSize: 22, fontWeight: '700' },

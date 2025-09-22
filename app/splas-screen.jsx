@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,90 +8,148 @@ import {
   Image,
   StatusBar,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { playClick } from './utils/ClickSound';
+import { ClickSoundContext } from './clickSound';
+import * as NavigationBar from 'expo-navigation-bar';
+import * as SystemUI from 'expo-system-ui';
 
 const { width, height } = Dimensions.get('window');
 
 export default function SplashScreen() {
-  const navigation = useNavigation();
+  const [currentPhase, setCurrentPhase] = useState(0); // 0: SKYNETIX, 1: App Name
+  const clickSoundContext = React.useContext(ClickSoundContext);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.5)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
+  const companyFadeAnim = useRef(new Animated.Value(0)).current;
+  const companyScaleAnim = useRef(new Animated.Value(0.3)).current;
+
+  // Configure full screen mode for splash screen
+  useEffect(() => {
+    const configureFullScreen = async () => {
+      try {
+        await NavigationBar.setVisibilityAsync('hidden');
+        await NavigationBar.setBackgroundColorAsync('#0F0F0F');
+        await SystemUI.setBackgroundColorAsync('#0F0F0F');
+        console.log('Splash screen full screen configured');
+      } catch (error) {
+        console.log('Splash screen full screen error:', error);
+      }
+    };
+    
+    configureFullScreen();
+  }, []);
 
   useEffect(() => {
-    // Start animations
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 100,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    const startAnimations = () => {
+      if (currentPhase === 0) {
+        // SKYNETIX phase
+        Animated.parallel([
+          Animated.timing(companyFadeAnim, {
+            toValue: 1,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+          Animated.spring(companyScaleAnim, {
+            toValue: 1,
+            tension: 80,
+            friction: 6,
+            useNativeDriver: true,
+          }),
+        ]).start();
 
-    // Navigate to main app after 3 seconds
-    const timer = setTimeout(() => {
-      navigation.navigate('/');
-    }, 3000);
+        // Switch to app phase after 2.5 seconds
+        setTimeout(() => {
+          setCurrentPhase(1);
+        }, 2500);
+      } else {
+        // App name and icon phase
+        Animated.parallel([
+          Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.spring(scaleAnim, {
+            toValue: 1,
+            tension: 100,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+          Animated.timing(slideAnim, {
+            toValue: 0,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }
+    };
 
-    return () => clearTimeout(timer);
-  }, [fadeAnim, scaleAnim, slideAnim, navigation]);
+    startAnimations();
+  }, [currentPhase, fadeAnim, scaleAnim, slideAnim, companyFadeAnim, companyScaleAnim]);
+
+  // Navigation is handled by the parent layout component
 
   return (
     <View style={styles.container}>
-      <StatusBar hidden />
+      <StatusBar hidden translucent />
       <LinearGradient
         colors={['#000000', '#1A1A1A', '#000000']}
         style={styles.gradient}
       >
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [
-                { scale: scaleAnim },
-                { translateY: slideAnim },
-              ],
-            },
-          ]}
-        >
-          {/* App Logo */}
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('../assets/images/icon.png')} // Add your logo here
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </View>
-
-          {/* App Name */}
-          <Text style={styles.appName}>ChessMate</Text>
-          
-          {/* App Tagline */}
-          <Text style={styles.tagline}>Connect • Play • Master</Text>
-
-          {/* Loading indicator */}
-          <View style={styles.loadingContainer}>
-            <View style={styles.loadingDots}>
-              <Animated.View style={[styles.dot, { opacity: fadeAnim }]} />
-              <Animated.View style={[styles.dot, { opacity: fadeAnim }]} />
-              <Animated.View style={[styles.dot, { opacity: fadeAnim }]} />
+        {currentPhase === 0 ? (
+          // SKYNETIX Phase
+          <Animated.View
+            style={[
+              styles.content,
+              {
+                opacity: companyFadeAnim,
+                transform: [{ scale: companyScaleAnim }],
+              },
+            ]}
+          >
+            <Text style={styles.companyName}>SKYNETIX</Text>
+            <Text style={styles.companySubtitle}>skynetix.in</Text>
+          </Animated.View>
+        ) : (
+          // App Name and Icon Phase
+          <Animated.View
+            style={[
+              styles.content,
+              {
+                opacity: fadeAnim,
+                transform: [
+                  { scale: scaleAnim },
+                  { translateY: slideAnim },
+                ],
+              },
+            ]}
+          >
+            {/* App Logo */}
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('../assets/images/icon.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
             </View>
-          </View>
-        </Animated.View>
+
+            {/* App Name */}
+            <Text style={styles.appName}>ChessMate</Text>
+            
+            {/* App Tagline */}
+            <Text style={styles.tagline}>Connect • Play • Spectate</Text>
+
+            {/* Loading indicator */}
+            <View style={styles.loadingContainer}>
+              <View style={styles.loadingDots}>
+                <Animated.View style={[styles.dot, { opacity: fadeAnim }]} />
+                <Animated.View style={[styles.dot, { opacity: fadeAnim }]} />
+                <Animated.View style={[styles.dot, { opacity: fadeAnim }]} />
+              </View>
+            </View>
+          </Animated.View>
+        )}
       </LinearGradient>
     </View>
   );
@@ -102,6 +160,11 @@ const styles = StyleSheet.create({
     flex: 1,
     width: width,
     height: height,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   gradient: {
     flex: 1,
@@ -119,6 +182,21 @@ const styles = StyleSheet.create({
   logo: {
     width: 120,
     height: 120,
+  },
+  companyName: {
+    fontSize: 56,
+    fontWeight: 'bold',
+    color: '#4ECDC4',
+    marginBottom: 15,
+    textAlign: 'center',
+    letterSpacing: 4,
+  },
+  companySubtitle: {
+    fontSize: 16,
+    color: '#AAAAAA',
+    textAlign: 'center',
+    fontWeight: '300',
+    letterSpacing: 2,
   },
   appName: {
     fontSize: 48,

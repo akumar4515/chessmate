@@ -13,11 +13,6 @@
       "web"
     ],
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/images/splash-main.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true
     },
@@ -27,14 +22,23 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "bundler": "metro",
       "output": "static"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-navigation-bar",
+      [
+        "expo-navigation-bar",
+        {
+          "position": "absolute",
+          "backgroundColor": "#000000"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

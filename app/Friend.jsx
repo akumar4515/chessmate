@@ -20,30 +20,42 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import io from 'socket.io-client';
-import { playClick } from './utils/ClickSound';
+import { ClickSoundContext } from './clickSound';
 const { width } = Dimensions.get('window');
 const API_URL = 'https://chessmate-backend-lfxo.onrender.com';
 
 const GAME_MODES = [
-  { id: 'blitz', name: 'Blitz', description: '3 minutes', time: 180, icon: '⚡', color: '#FF6B6B', gradient: ['#FF6B6B', '#FF8E8E'] },
-  { id: 'rapid', name: 'Rapid', description: '10 minutes', time: 600, icon: '🎯', color: '#4ECDC4', gradient: ['#4ECDC4', '#6BCEC4'] },
-  { id: 'classic', name: 'Classic', description: '30 minutes', time: 1800, icon: '👑', color: '#45B7D1', gradient: ['#45B7D1', '#6BC5D1'] },
+  { id: 'blitz', name: 'Blitz', description: '30 second', time: 30, icon: '⚡', color: '#FF6B6B', gradient: ['#FF6B6B', '#FF8E8E'] },
+  { id: 'rush', name: 'Rush', description: '20s minutes', time: 20, icon: '🎯', color: '#4ECDC4', gradient: ['#4ECDC4', '#6BCEC4'] },
+  { id: 'classic', name: 'Classic', description: '60second', time: 60, icon: '👑', color: '#45B7D1', gradient: ['#45B7D1', '#6BC5D1'] },
   { id: 'unlimited', name: 'Unlimited', description: 'No time limit', time: 999999, icon: '∞', color: '#9B59B6', gradient: ['#9B59B6', '#B569C6'] },
 ];
 
+// Global cache for friends data
+let friendsDataCache = {
+  friends: null,
+  pendingRequests: null,
+  sentRequests: null,
+  user: null
+};
+let isRefreshing = false;
+
 export default function FriendsPageRedesigned() {
   // session
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(friendsDataCache.user);
+  const clickSoundContext = React.useContext(ClickSoundContext);
   const userIdRef = useRef(null);
   const tokenRef = useRef(null);
 
   // data
-  const [friends, setFriends] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);
-  const [sentRequests, setSentRequests] = useState([]);
+  const [friends, setFriends] = useState(friendsDataCache.friends || []);
+  const [pendingRequests, setPendingRequests] = useState(friendsDataCache.pendingRequests || []);
+  const [sentRequests, setSentRequests] = useState(friendsDataCache.sentRequests || []);
   const [friendGameStatus, setFriendGameStatus] = useState(new Map());
+  const [friendSpectatingStatus, setFriendSpectatingStatus] = useState(new Map());
+  const [sortedFriends, setSortedFriends] = useState([]);
 
   // UI
   const [activeTab, setActiveTab] = useState('friends');
@@ -67,7 +79,7 @@ export default function FriendsPageRedesigned() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
 
-  const navigation = useNavigation();
+  const router = useRouter();
   const socketRef = useRef(null);
 
   // animations
@@ -76,6 +88,27 @@ export default function FriendsPageRedesigned() {
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
   const messageTimeoutRef = useRef(null);
+
+  // Function to sort friends by online status
+  const sortFriendsByOnlineStatus = (friendsList, gameStatusMap) => {
+    return [...friendsList].sort((a, b) => {
+      const aOnline = gameStatusMap.has(String(a.id));
+      const bOnline = gameStatusMap.has(String(b.id));
+      
+      // Online users first
+      if (aOnline && !bOnline) return -1;
+      if (!aOnline && bOnline) return 1;
+      
+      // If both online or both offline, sort alphabetically by username
+      return a.username.localeCompare(b.username);
+    });
+  };
+
+  // Update sorted friends when friends list or game status changes
+  useEffect(() => {
+    const sorted = sortFriendsByOnlineStatus(friends, friendGameStatus);
+    setSortedFriends(sorted);
+  }, [friends, friendGameStatus]);
 
   // animate in
   useEffect(() => {
@@ -89,34 +122,24 @@ export default function FriendsPageRedesigned() {
   // bootstrap
   useEffect(() => {
     let mounted = true;
-    const bootstrap = async () => {
-      try {
-        setLoading(true);
-        const token = await AsyncStorage.getItem('token');
-        const userData = await AsyncStorage.getItem('user');
-        if (!token || !userData) {
-          showMessage('Please log in to access friends', 'error');
-          return;
-        }
-        tokenRef.current = token;
-        const parsed = JSON.parse(userData);
-        setUser(parsed);
-        userIdRef.current = parsed.id;
-
-        await Promise.all([
-          fetchFriends(token),
-          fetchPendingRequests(token),
-          fetchSentRequests(token),
-        ]);
-
-        await initializeSocket(token);
-      } catch (e) {
-        showMessage('Failed to load friends. Please try again.', 'error');
-      } finally {
-        if (mounted) setLoading(false);
+    const initializeFriendsData = async () => {
+      // If we have cached data, show it immediately and refresh in background
+      if (friendsDataCache.user && friendsDataCache.friends) {
+        setUser(friendsDataCache.user);
+        setFriends(friendsDataCache.friends);
+        setPendingRequests(friendsDataCache.pendingRequests || []);
+        setSentRequests(friendsDataCache.sentRequests || []);
+        userIdRef.current = friendsDataCache.user.id;
+        
+        // Refresh data in background without showing loading
+        refreshFriendsData(false);
+      } else {
+        // No cached data, show loading and fetch data
+        refreshFriendsData(true);
       }
     };
-    bootstrap();
+    
+    initializeFriendsData();
     return () => {
       mounted = false;
       if (socketRef.current) socketRef.current.disconnect();
@@ -127,23 +150,49 @@ export default function FriendsPageRedesigned() {
   // refresh on focus
   useFocusEffect(
     React.useCallback(() => {
+      console.log('🔄 Friend page focused, checking socket connection...');
+      
+      // Only refresh if we already have user data (not on initial load)
+      if (friendsDataCache.user && user) {
+        refreshFriendsData(false);
+      }
+      
       if (socketRef.current?.connected) {
+        console.log('✅ Socket is connected, requesting online users...');
         socketRef.current.emit('requestOnlineUsers');
-      } else if (tokenRef.current) {
-        initializeSocket(tokenRef.current);
+      } else {
+        console.log('❌ Socket not connected, reinitializing...');
+        if (tokenRef.current) {
+          initializeSocket(tokenRef.current);
+        }
       }
       return () => {};
-    }, [])
+    }, [user])
   );
 
   // socket setup
   const initializeSocket = async (token) => {
-    if (socketRef.current) return;
+    // Only create new socket if we don't have one or it's disconnected
+    if (socketRef.current && socketRef.current.connected) {
+      console.log('✅ Socket already connected, skipping initialization');
+      return;
+    }
+    
+    // Disconnect existing socket if it exists
+    if (socketRef.current) {
+      console.log('🔄 Disconnecting existing socket...');
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    
+    console.log('🔄 Creating new socket connection...');
     socketRef.current = io(API_URL, { auth: { token } });
 
     socketRef.current.on('onlineUsers', (usersWithStatus) => {
+      console.log('📊 Received online users:', usersWithStatus);
       const map = new Map();
       usersWithStatus.forEach(u => map.set(u.userId, { inGame: u.inGame, gameId: u.gameId }));
+      console.log('🗺️ Updated friend game status map:', Array.from(map.entries()));
       setFriendGameStatus(map);
     });
 
@@ -151,6 +200,27 @@ export default function FriendsPageRedesigned() {
       setFriendGameStatus(prev => {
         const m = new Map(prev);
         m.set(data.userId, { inGame: data.inGame, gameId: data.gameId });
+        return m;
+      });
+    });
+
+    // Listen for spectator status updates
+    socketRef.current.on('friendSpectatingStatus', (data) => {
+      console.log('👁️ Friend spectating status update:', data);
+      setFriendSpectatingStatus(prev => {
+        const m = new Map(prev);
+        if (data.isSpectating) {
+          m.set(data.userId, { 
+            isSpectating: true, 
+            gameId: data.gameId, 
+            spectatingPlayer: data.spectatingPlayer 
+          });
+          console.log(`👁️ Added spectating status for user ${data.userId}`);
+        } else {
+          m.delete(data.userId);
+          console.log(`👁️ Removed spectating status for user ${data.userId}`);
+        }
+        console.log('👁️ Updated spectating status map:', Array.from(m.entries()));
         return m;
       });
     });
@@ -172,14 +242,17 @@ export default function FriendsPageRedesigned() {
       if (!myId) return;
       setInviteModalVisible(false);
       setGameModalVisible(false);
-      navigation.navigate('chessMulti', {
-        mode: data.mode,
-        initialTime: data.initialTime,
-        uid: myId,
-        friendId: myId === data.whitePlayerId ? data.blackPlayerId : data.whitePlayerId,
-        gameId: data.gameId,
-        whitePlayerId: data.whitePlayerId,
-        blackPlayerId: data.blackPlayerId,
+      router.push({
+        pathname: '/chessMulti',
+        params: {
+          mode: data.mode,
+          initialTime: data.initialTime,
+          uid: myId,
+          friendId: myId === data.whitePlayerId ? data.blackPlayerId : data.whitePlayerId,
+          gameId: data.gameId,
+          whitePlayerId: data.whitePlayerId,
+          blackPlayerId: data.blackPlayerId,
+        }
       });
     });
 
@@ -189,8 +262,26 @@ export default function FriendsPageRedesigned() {
       setGameModalVisible(false);
     });
 
-    socketRef.current.on('connect_error', () => {
-      showMessage('Failed to connect to game server', 'error');
+    socketRef.current.on('connect', () => {
+      console.log('✅ Socket connected to friends server');
+      // Request online users immediately after connection
+      socketRef.current.emit('requestOnlineUsers');
+    });
+
+    socketRef.current.on('disconnect', (reason) => {
+      console.log('❌ Socket disconnected:', reason);
+      // Clear online status when disconnected
+      setFriendGameStatus(new Map());
+    });
+
+    socketRef.current.on('reconnect', () => {
+      // Request online users after reconnection
+      socketRef.current.emit('requestOnlineUsers');
+    });
+
+    socketRef.current.on('connect_error', (error) => {
+      console.error('❌ Socket connection error:', error);
+      showMessage('Failed to connect to friends server', 'error');
     });
 
     // NEW: chat live listener
@@ -211,17 +302,23 @@ export default function FriendsPageRedesigned() {
   // REST helpers
   const fetchFriends = async (token) => {
     const res = await axios.get(`${API_URL}/api/friends`, { headers: { Authorization: `Bearer ${token}` } });
-    setFriends(res.data.friends || []);
+    const friendsData = res.data.friends || [];
+    friendsDataCache.friends = friendsData;
+    setFriends(friendsData);
   };
 
   const fetchPendingRequests = async (token) => {
     const res = await axios.get(`${API_URL}/api/friend-requests/pending`, { headers: { Authorization: `Bearer ${token}` } });
-    setPendingRequests(res.data.requests || []);
+    const pendingData = res.data.requests || [];
+    friendsDataCache.pendingRequests = pendingData;
+    setPendingRequests(pendingData);
   };
 
   const fetchSentRequests = async (token) => {
     const res = await axios.get(`${API_URL}/api/friend-requests/sent`, { headers: { Authorization: `Bearer ${token}` } });
-    setSentRequests(res.data.sentRequests || []);
+    const sentData = res.data.sentRequests || [];
+    friendsDataCache.sentRequests = sentData;
+    setSentRequests(sentData);
   };
 
   // messages
@@ -239,6 +336,56 @@ export default function FriendsPageRedesigned() {
       setSuccessMessage('');
       messageTimeoutRef.current = null;
     }, 3000);
+  };
+
+  // Function to refresh friends data in background
+  const refreshFriendsData = async (showLoading = false) => {
+    if (isRefreshing) return; // Prevent multiple simultaneous refreshes
+    
+    try {
+      isRefreshing = true;
+      if (showLoading) setLoading(true);
+      
+      const token = await AsyncStorage.getItem('token');
+      const userData = await AsyncStorage.getItem('user');
+      
+      if (!token || !userData) {
+        // Clear cache if no auth data
+        friendsDataCache = { friends: null, pendingRequests: null, sentRequests: null, user: null };
+        setUser(null);
+        setFriends([]);
+        setPendingRequests([]);
+        setSentRequests([]);
+        return;
+      }
+
+      tokenRef.current = token;
+      const parsed = JSON.parse(userData);
+      
+      // Update user data
+      friendsDataCache.user = parsed;
+      setUser(parsed);
+      userIdRef.current = parsed.id;
+
+      // Fetch all friends data
+      await Promise.all([
+        fetchFriends(token),
+        fetchPendingRequests(token),
+        fetchSentRequests(token),
+      ]);
+
+      // Initialize socket
+      await initializeSocket(token);
+      
+    } catch (e) {
+      console.error('Background refresh error:', e);
+      if (showLoading) {
+        showMessage('Failed to load friends. Please try again.', 'error');
+      }
+    } finally {
+      isRefreshing = false;
+      if (showLoading) setLoading(false);
+    }
   };
 
   // search
@@ -301,7 +448,8 @@ export default function FriendsPageRedesigned() {
 
   // invites
   const inviteFriendToPlay = (friend) => {
-    const gs = friendGameStatus.get(friend.id);
+    const friendIdStr = String(friend.id);
+    const gs = friendGameStatus.get(friendIdStr);
     if (gs?.inGame) {
       showMessage('Player is currently in a game', 'error');
       return;
@@ -333,19 +481,38 @@ export default function FriendsPageRedesigned() {
 
   // spectate
   const spectateGame = (friend) => {
-    const gs = friendGameStatus.get(friend.id);
+    const friendIdStr = String(friend.id);
+    const gs = friendGameStatus.get(friendIdStr);
     if (!gs?.inGame || !gs?.gameId) {
       showMessage('Friend is not currently in a game', 'error');
       return;
     }
+    
+    // Check if both players are still in the game
+    // We need to check if there are at least 2 players in the game
+    let playerCount = 0;
+    friendGameStatus.forEach((status, id) => {
+      if (status.gameId === gs.gameId && status.inGame) {
+        playerCount++;
+      }
+    });
+    
+    if (playerCount < 2) {
+      showMessage('Cannot spectate: Only one player remains in the game', 'error');
+      return;
+    }
+    
     const myId = userIdRef.current;
-    navigation.navigate('chessMulti', {
-      mode: 'spectator',
-      gameId: gs.gameId,
-      friendId: friend.id,
-      uid: myId,
-      isSpectator: true,
-      spectatorFriendName: friend.username,
+    router.push({
+      pathname: '/chessMulti',
+      params: {
+        mode: 'spectator',
+        gameId: gs.gameId,
+        friendId: friend.id,
+        uid: myId,
+        isSpectator: true,
+        spectatorFriendName: friend.username,
+      }
     });
   };
 
@@ -392,8 +559,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
   const onRefresh = async () => {
     try {
       setRefreshing(true);
-      const token = tokenRef.current || (await AsyncStorage.getItem('token'));
-      await Promise.all([fetchFriends(token), fetchPendingRequests(token), fetchSentRequests(token)]);
+      await refreshFriendsData(false);
       socketRef.current?.emit('requestOnlineUsers');
     } finally {
       setRefreshing(false);
@@ -401,42 +567,134 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
   };
 
   // render helpers
-  const renderProfilePicture = (item, size = 50) =>
+  const renderProfilePicture = (item, size = 50, isOnline = false) =>
     item.profile_picture ? (
-      <Image source={{ uri: item.profile_picture }} style={[styles.profilePic, { width: size, height: size, borderRadius: size / 2 }]} />
+      <Image source={{ uri: item.profile_picture }} style={[
+        styles.profilePic, 
+        { 
+          width: size, 
+          height: size, 
+          borderRadius: size / 2,
+          borderColor: isOnline ? '#4ECDC4' : '#333',
+          borderWidth: isOnline ? 3 : 2
+        }
+      ]} />
     ) : (
-      <View style={[styles.placeholderPic, { width: size, height: size, borderRadius: size / 2 }]}>
+      <View style={[
+        styles.placeholderPic, 
+        { 
+          width: size, 
+          height: size, 
+          borderRadius: size / 2,
+          borderColor: isOnline ? '#4ECDC4' : '#444',
+          borderWidth: isOnline ? 3 : 2
+        }
+      ]}>
         <Text style={styles.placeholderText}>{item.username[0]?.toUpperCase() || 'U'}</Text>
       </View>
     );
 
   const renderFriendItem = ({ item }) => {
-    const gs = friendGameStatus.get(item.id);
+    // Convert friend ID to string to match the map keys
+    const friendIdStr = String(item.id);
+    const gs = friendGameStatus.get(friendIdStr);
+    const spectatingStatus = friendSpectatingStatus.get(friendIdStr);
+    const isOnline = friendGameStatus.has(friendIdStr);
     const inGame = !!gs?.inGame;
+    const isSpectating = !!spectatingStatus?.isSpectating;
+    
+    console.log(`👤 Friend ${item.username} (ID: ${item.id}, string: ${friendIdStr}):`, {
+      isOnline,
+      inGame,
+      isSpectating,
+      gameStatus: gs,
+      spectatingStatus,
+      friendGameStatusSize: friendGameStatus.size,
+      spectatingStatusSize: friendSpectatingStatus.size,
+      allOnlineUserIds: Array.from(friendGameStatus.keys()),
+      allSpectatingUserIds: Array.from(friendSpectatingStatus.keys())
+    });
+    
+    let statusText = 'Offline';
+    let statusStyle = styles.offlineStatus;
+    
+    if (isOnline) {
+      if (isSpectating) {
+        statusText = '👁️ Spectating...';
+        statusStyle = styles.spectatingStatus;
+      } else if (inGame) {
+        statusText = '🎮 In Game';
+        statusStyle = styles.inGameStatus;
+      } else {
+        statusText = '🟢 Online';
+        statusStyle = styles.onlineStatus;
+      }
+    }
+    
     return (
       <View style={styles.itemCard}>
         <LinearGradient colors={['#1C1C1C', '#151515']} style={styles.itemGradient}>
-          <View style={styles.profilePicContainer}>{renderProfilePicture(item, 60)}</View>
+          <View style={styles.profilePicContainer}>{renderProfilePicture(item, 60, isOnline)}</View>
           <View style={styles.itemInfo}>
-            <Text style={styles.itemName}>{item.username}</Text>
-            <Text style={[styles.itemSubtext, inGame && styles.inGameStatus]}>{inGame ? '🎮 In Game' : 'Online • Ready to play'}</Text>
+            <View style={styles.nameContainer}>
+              <Text style={styles.itemName}>{item.username}</Text>
+              {isOnline && (
+                <View style={styles.onlineIndicator}>
+                  <View style={styles.onlineDot} />
+                </View>
+              )}
+            </View>
+            <Text style={[styles.itemSubtext, statusStyle]}>{statusText}</Text>
           </View>
           {/* Play/Spectate */}
-          {inGame ? (
-            <TouchableOpacity onPress={() =>{playClick(), spectateGame(item)}} style={styles.spectateButton}>
-              <LinearGradient colors={['#9B59B6', '#B569C6']} style={styles.spectateButtonGradient}>
-                <Feather name="eye" size={18} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity onPress={() =>{playClick(), inviteFriendToPlay(item)}} style={styles.playButton}>
+          {isOnline && inGame && !isSpectating ? (
+            (() => {
+              // Check if both players are still in the game
+              const friendIdStr = String(item.id);
+              const gs = friendGameStatus.get(friendIdStr);
+              let playerCount = 0;
+              if (gs?.gameId) {
+                friendGameStatus.forEach((status, id) => {
+                  if (status.gameId === gs.gameId && status.inGame) {
+                    playerCount++;
+                  }
+                });
+              }
+              
+              // Only show spectate button if both players are in the game
+              return playerCount >= 2 ? (
+                <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), spectateGame(item)}} style={styles.spectateButton}>
+                  <LinearGradient colors={['#9B59B6', '#B569C6']} style={styles.spectateButtonGradient}>
+                    <Feather name="eye" size={18} color="#fff" />
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.inGameButton}>
+                  <LinearGradient colors={['#666666', '#555555']} style={styles.spectateButtonGradient}>
+                    <Feather name="users" size={18} color="#fff" />
+                  </LinearGradient>
+                </View>
+              );
+            })()
+          ) : isOnline && !inGame && !isSpectating ? (
+            <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), inviteFriendToPlay(item)}} style={styles.playButton}>
               <LinearGradient colors={['#4ECDC4', '#6BCEC4']} style={styles.playButtonGradient}>
                 <Feather name="play" size={18} color="#0F0F0F" />
               </LinearGradient>
             </TouchableOpacity>
+          ) : isOnline && isSpectating ? (
+            <View style={styles.spectatingButton}>
+              <LinearGradient colors={['#FFA500', '#FFB84D']} style={styles.spectatingButtonGradient}>
+                <Feather name="eye" size={18} color="#fff" />
+              </LinearGradient>
+            </View>
+          ) : (
+            <View style={styles.offlineButton}>
+              <Feather name="user-x" size={18} color="#666" />
+            </View>
           )}
           {/* NEW: Message button */}
-          <TouchableOpacity onPress={() =>{playClick(), openChat(item)}} style={[styles.addButton, { marginLeft: 8 }]}>
+          <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), openChat(item)}} style={[styles.addButton, { marginLeft: 8 }]}>
             <Feather name="message-circle" size={18} color="#4ECDC4" />
           </TouchableOpacity>
         </LinearGradient>
@@ -447,12 +705,12 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
   const renderSearchResult = ({ item }) => (
     <View style={styles.itemCard}>
       <LinearGradient colors={['#1C1C1C', '#151515']} style={styles.itemGradient}>
-        <View style={styles.profilePicContainer}>{renderProfilePicture(item, 50)}</View>
+        <View style={styles.profilePicContainer}>{renderProfilePicture(item, 50, false)}</View>
         <View style={styles.itemInfo}>
           <Text style={styles.itemName}>{item.username}</Text>
           <Text style={styles.itemSubtext}>{item.email}</Text>
         </View>
-        <TouchableOpacity onPress={() => {playClick(),sendFriendRequest(item.id)}} style={styles.addButton}>
+        <TouchableOpacity onPress={() => {clickSoundContext?.playClick?.(),sendFriendRequest(item.id)}} style={styles.addButton}>
           <Feather name="user-plus" size={18} color="#4ECDC4" />
         </TouchableOpacity>
       </LinearGradient>
@@ -462,16 +720,16 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
   const renderPendingRequest = ({ item }) => (
     <View style={styles.itemCard}>
       <LinearGradient colors={['#1C1C1C', '#151515']} style={styles.itemGradient}>
-        <View style={styles.profilePicContainer}>{renderProfilePicture(item, 50)}</View>
+        <View style={styles.profilePicContainer}>{renderProfilePicture(item, 50, false)}</View>
         <View style={styles.itemInfo}>
           <Text style={styles.itemName}>{item.username}</Text>
           <Text style={styles.itemSubtext}>Wants to be friends</Text>
         </View>
         <View style={styles.actionButtons}>
-          <TouchableOpacity onPress={() =>{playClick(), acceptFriendRequest(item.id)}} style={[styles.actionButton, styles.acceptButton]}>
+          <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), acceptFriendRequest(item.id)}} style={[styles.actionButton, styles.acceptButton]}>
             <Feather name="check" size={16} color="#0F0F0F" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() =>{playClick(), cancelFriendRequest(item.id)}} style={[styles.actionButton, styles.declineButton]}>
+          <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), cancelFriendRequest(item.id)}} style={[styles.actionButton, styles.declineButton]}>
             <Feather name="x" size={16} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -482,12 +740,12 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
   const renderSentRequest = ({ item }) => (
     <View style={styles.itemCard}>
       <LinearGradient colors={['#1C1C1C', '#151515']} style={styles.itemGradient}>
-        <View style={styles.profilePicContainer}>{renderProfilePicture(item, 50)}</View>
+        <View style={styles.profilePicContainer}>{renderProfilePicture(item, 50, false)}</View>
         <View style={styles.itemInfo}>
           <Text style={styles.itemName}>{item.username}</Text>
           <Text style={styles.itemSubtext}>Request pending</Text>
         </View>
-        <TouchableOpacity onPress={() =>{playClick(), cancelFriendRequest(item.id)}} style={styles.cancelButton}>
+        <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), cancelFriendRequest(item.id)}} style={styles.cancelButton}>
           <Text style={styles.cancelButtonText}>Cancel</Text>
         </TouchableOpacity>
       </LinearGradient>
@@ -495,7 +753,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
   );
 
   const renderTab = (key, label, icon) => (
-    <TouchableOpacity onPress={() =>{playClick(), setActiveTab(key)}} style={[styles.tab, activeTab === key && styles.activeTab]}>
+    <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), setActiveTab(key)}} style={[styles.tab, activeTab === key && styles.activeTab]}>
       <Feather name={icon} size={14} color={activeTab === key ? '#4ECDC4' : '#888'} />
       <Text style={[styles.tabText, activeTab === key && styles.activeTabText]}>{label}</Text>
     </TouchableOpacity>
@@ -503,7 +761,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
 
   const getTabData = () => {
     switch (activeTab) {
-      case 'friends': return friends;
+      case 'friends': return sortedFriends;
       case 'search': return searchResults;
       case 'pending': return pendingRequests;
       case 'sent': return sentRequests;
@@ -528,7 +786,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
         <Ionicons name="people-outline" size={64} color="#4ECDC4" />
         <Text style={styles.guestTitle}>Friends Feature</Text>
         <Text style={styles.guestText}>Please log in to connect with friends and play online chess matches.</Text>
-        <TouchableOpacity onPress={() =>{playClick(), navigation.navigate('User')}} style={styles.loginButton}>
+        <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.push('/User')}} style={styles.loginButton}>
           <LinearGradient colors={['#4ECDC4', '#45B7D1']} style={styles.loginButtonGradient}>
             <Text style={styles.loginButtonText}>Go to Login</Text>
           </LinearGradient>
@@ -554,7 +812,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
             placeholderTextColor="#666"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => {playClick(), setSearchQuery(''); setSearchResults([]); }}>
+            <TouchableOpacity onPress={() => {clickSoundContext?.playClick?.(), setSearchQuery(''); setSearchResults([]); }}>
               <Feather name="x" size={16} color="#888" />
             </TouchableOpacity>
           )}
@@ -608,12 +866,12 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Choose Game Mode</Text>
-              <TouchableOpacity onPress={() =>{playClick(), setGameModalVisible(false)}}><Feather name="x" size={18} color="#EDEDED" /></TouchableOpacity>
+              <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), setGameModalVisible(false)}}><Feather name="x" size={18} color="#EDEDED" /></TouchableOpacity>
             </View>
             <Text style={styles.modalSubtitle}>Playing against {selectedFriend?.username}</Text>
             <View style={styles.gameModesContainer}>
               {GAME_MODES.map((m) => (
-                <TouchableOpacity key={m.id} onPress={() =>{playClick(), sendGameInvite(m.id)}} style={styles.gameModeCard}>
+                <TouchableOpacity key={m.id} onPress={() =>{clickSoundContext?.playClick?.(), sendGameInvite(m.id)}} style={styles.gameModeCard}>
                   <LinearGradient colors={m.gradient} style={styles.gameModeGradient}>
                     <Text style={styles.gameModeIcon}>{m.icon}</Text>
                     <Text style={styles.gameModeName}>{m.name}</Text>
@@ -627,7 +885,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
       </Modal>
 
       {/* Invite Modal */}
-      <Modal visible={inviteModalVisible} transparent animationType="fade" onRequestClose={() =>{playClick(), setInviteModalVisible(false)}}>
+      <Modal visible={inviteModalVisible} transparent animationType="fade" onRequestClose={() =>{clickSoundContext?.playClick?.(), setInviteModalVisible(false)}}>
         <View style={styles.modalContainer}>
           <View style={styles.inviteModalContent}>
             {receivedInvite ? (
@@ -636,12 +894,12 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
                 <Text style={styles.inviteTitle}>Game Invitation</Text>
                 <Text style={{ color: '#AAA', marginBottom: 20 }}>{receivedInvite.username} invited you to play {receivedInvite.mode}</Text>
                 <View style={styles.inviteButtons}>
-                  <TouchableOpacity onPress={()=>{playClick(),acceptInvite()}} style={styles.inviteButton}>
+                  <TouchableOpacity onPress={()=>{clickSoundContext?.playClick?.(),acceptInvite()}} style={styles.inviteButton}>
                     <LinearGradient colors={['#4ECDC4', '#45B7D1']} style={styles.inviteButtonGradient}>
                       <Text style={styles.inviteButtonText}>Accept</Text>
                     </LinearGradient>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={()=>{playClick(),declineInvite()}} style={styles.declineInviteButton}>
+                  <TouchableOpacity onPress={()=>{clickSoundContext?.playClick?.(),declineInvite()}} style={styles.declineInviteButton}>
                     <Text style={styles.declineInviteButtonText}>Decline</Text>
                   </TouchableOpacity>
                 </View>
@@ -651,7 +909,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
                 <Ionicons name="time" size={48} color="#EDEDED" />
                 <Text style={styles.inviteTitle}>Sending Invitation</Text>
                 <Text style={{ color: '#AAA', marginBottom: 10 }}>Waiting for {selectedFriend?.username} to respond...</Text>
-                <TouchableOpacity onPress={() => {playClick(),setInviteModalVisible(false); setGameModalVisible(false); }} style={styles.cancelInviteButton}>
+                <TouchableOpacity onPress={() => {clickSoundContext?.playClick?.(),setInviteModalVisible(false); setGameModalVisible(false); }} style={styles.cancelInviteButton}>
                   <Text style={styles.cancelInviteButtonText}>Cancel</Text>
                 </TouchableOpacity>
               </>
@@ -661,12 +919,12 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
       </Modal>
 
       {/* Chat Modal (NEW) */}
-      <Modal visible={chatVisible} transparent animationType="fade" onRequestClose={()=>{playClick(),closeChat()}}>
+      <Modal visible={chatVisible} transparent animationType="fade" onRequestClose={()=>{clickSoundContext?.playClick?.(),closeChat()}}>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Chat with {chatFriend?.username}</Text>
-              <TouchableOpacity onPress={()=>{playClick(),closeChat()}}><Feather name="x" size={20} color="#EDEDED" /></TouchableOpacity>
+              <TouchableOpacity onPress={()=>{clickSoundContext?.playClick?.(),closeChat()}}><Feather name="x" size={20} color="#EDEDED" /></TouchableOpacity>
             </View>
             <FlatList
               data={chatMessages}
@@ -688,7 +946,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
                 placeholderTextColor="#777"
                 style={{ flex: 1, color: '#EDEDED', backgroundColor: '#1C1C1C', borderRadius: 10, paddingHorizontal: 12, height: 44 }}
               />
-              <TouchableOpacity onPress={()=>{playClick(),sendChat()}} style={{ width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: '#333', borderRadius: 10, marginLeft: 8 }}>
+              <TouchableOpacity onPress={()=>{clickSoundContext?.playClick?.(),sendChat()}} style={{ width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: '#333', borderRadius: 10, marginLeft: 8 }}>
                 <Feather name="send" size={18} color="#4ECDC4" />
               </TouchableOpacity>
             </View>
@@ -700,7 +958,7 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 35, backgroundColor: '#0F0F0F' },
+  container: { flex: 1, backgroundColor: '#0F0F0F',paddingTop: 30, },
   guestContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, backgroundColor: '#0F0F0F' },
   guestTitle: { color: '#EDEDED', fontSize: 28, fontWeight: 'bold', marginTop: 20, marginBottom: 10 },
   guestText: { color: '#888', fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 30 },
@@ -735,12 +993,22 @@ const styles = StyleSheet.create({
   placeholderText: { color: '#EDEDED', fontWeight: 'bold' },
   itemInfo: { flex: 1 },
   itemName: { color: '#EDEDED', fontSize: 18, fontWeight: '600', marginBottom: 4 },
+  nameContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  onlineIndicator: { marginLeft: 8, justifyContent: 'center', alignItems: 'center' },
+  onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ECDC4' },
   itemSubtext: { color: '#888', fontSize: 14 },
   inGameStatus: { color: '#9B59B6', fontWeight: '600' },
+  spectatingStatus: { color: '#FFA500', fontWeight: '600' },
+  onlineStatus: { color: '#4ECDC4', fontWeight: '600' },
+  offlineStatus: { color: '#666', fontWeight: '500' },
+  offlineButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1C1C1C', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#333' },
   playButton: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden' },
   playButtonGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
   spectateButton: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden' },
   spectateButtonGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
+  spectatingButton: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden' },
+  spectatingButtonGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
+  inGameButton: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden' },
   addButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1C1C1C', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#4ECDC4' },
   actionButtons: { flexDirection: 'row' },
   actionButton: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },

@@ -1,15 +1,52 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Image, Modal, Dimensions, ScrollView, BackHandler, SafeAreaView, StatusBar } from 'react-native';
 import { Chess } from 'chess.js';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import { Picker } from '@react-native-picker/picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { playClick } from './utils/ClickSound';
+import { ClickSoundContext } from './clickSound';
 
 const { width, height } = Dimensions.get('window');
-const squareSize = Math.min(width * 0.113, 45);
+
+// Enhanced responsive calculations
+const isTablet = width > 768;
+const isSmallScreen = height < 700;
+const isLargeScreen = height > 800;
+const isVerySmallScreen = height < 600;
+const isVeryLargeScreen = height > 900;
+
+// Calculate available height for the board
+const statusBarHeight = 0; // Since we're hiding status bar
+const headerHeight = 70;
+const playerSectionHeight = 120; // Both player sections
+const controlPanelHeight = 60;
+const bottomPadding = 20;
+const availableHeight = height - statusBarHeight - headerHeight - playerSectionHeight - controlPanelHeight - bottomPadding;
+
+// Calculate optimal square size based on available space
+const maxBoardWidth = width - 40; // 20px padding on each side
+const maxBoardHeight = availableHeight - 20; // 10px padding top and bottom
+const maxSquareSize = Math.min(maxBoardWidth / 8, maxBoardHeight / 8);
+const squareSize = Math.max(30, Math.min(maxSquareSize, 60)); // Min 30px, max 60px
+
+// Responsive font sizes
+const getResponsiveFontSize = (baseSize) => {
+  if (isVerySmallScreen) return baseSize * 0.8;
+  if (isSmallScreen) return baseSize * 0.9;
+  if (isLargeScreen) return baseSize * 1.1;
+  if (isVeryLargeScreen) return baseSize * 1.2;
+  return baseSize;
+};
+
+// Responsive spacing
+const getResponsiveSpacing = (baseSpacing) => {
+  if (isVerySmallScreen) return baseSpacing * 0.7;
+  if (isSmallScreen) return baseSpacing * 0.8;
+  if (isLargeScreen) return baseSpacing * 1.2;
+  if (isVeryLargeScreen) return baseSpacing * 1.3;
+  return baseSpacing;
+};
 
 // Piece images for the board and captured pieces (UNCHANGED)
 const pieceImages = {
@@ -36,6 +73,7 @@ const initialPieces = {
 
 export default function ChessAiApp() {
   const [chess] = useState(new Chess());
+  const clickSoundContext = React.useContext(ClickSoundContext);
   const [gameFEN, setGameFEN] = useState(chess.fen());
   const [selectedSquare, setSelectedSquare] = useState(null);
   const [promotionModalVisible, setPromotionModalVisible] = useState(false);
@@ -61,10 +99,13 @@ export default function ChessAiApp() {
   const [isBoardFlipped, setIsBoardFlipped] = useState(false);
   const [moveHistory, setMoveHistory] = useState([]);
   const [exitModalVisible, setExitModalVisible] = useState(false);
+  const [showAiCaptured, setShowAiCaptured] = useState(false);
+  const [showHumanCaptured, setShowHumanCaptured] = useState(false);
 
-  const navigation = useNavigation();
-  const route = useRoute();
-  const { mode } = route.params;
+  const router = useRouter();
+  const { mode, level: routeLevel } = useLocalSearchParams();
+  const timerRef = useRef(null);
+  const isMountedRef = useRef(true);
 
   const board = chess.board();
   const validMoves = selectedSquare ? chess.moves({ square: selectedSquare, verbose: true }).map(move => move.to) : [];
@@ -127,35 +168,17 @@ export default function ChessAiApp() {
     setBlackTimer(initialTime);
   }, [mode]);
 
+
+  // Cleanup on component unmount
   useEffect(() => {
-    let timer;
-    if (isPlay && !gameOverModalVisible && !promotionModalVisible && mode !== 'unlimited') {
-      timer = setInterval(() => {
-        if (currentTurn === 'w') {
-          setWhiteTimer(prev => {
-            if (prev <= 1) {
-              clearInterval(timer);
-              setGameOverMessage('AI wins! You ran out of time.');
-              setGameOverModalVisible(true);
-              return 0;
-            }
-            return prev - 1;
-          });
-        } else {
-          setBlackTimer(prev => {
-            if (prev <= 1) {
-              clearInterval(timer);
-              setGameOverMessage('You win! AI ran out of time.');
-              setGameOverModalVisible(true);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [currentTurn, gameOverModalVisible, promotionModalVisible, isPlay, mode]);
+    return () => {
+      isMountedRef.current = false;
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (chess.inCheck()) {
@@ -167,9 +190,85 @@ export default function ChessAiApp() {
     }
   }, [gameFEN]);
 
+  // Get level from route params
+  useEffect(() => {
+    if (routeLevel) {
+      setLevel(routeLevel);
+    }
+  }, [routeLevel]);
+
+  // Start timer for current player
+  const startTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    if (isPlay && !gameOverModalVisible && !exitModalVisible && !promotionModalVisible && mode !== 'unlimited' && !chess.isGameOver() && isMountedRef.current) {
+      timerRef.current = setInterval(() => {
+        if (!isMountedRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+          return;
+        }
+        
+        // Use chess.turn() to get the actual current turn, not the state
+        const actualTurn = chess.turn();
+        
+        if (actualTurn === 'w') {
+          setWhiteTimer(prev => {
+            if (prev <= 1) {
+              clearInterval(timerRef.current);
+              if (isMountedRef.current) {
+                setGameOverMessage('AI wins! You ran out of time.');
+                setGameOverModalVisible(true);
+              }
+              return 0;
+            }
+            return prev - 1;
+          });
+        } else {
+          setBlackTimer(prev => {
+            if (prev <= 1) {
+              clearInterval(timerRef.current);
+              if (isMountedRef.current) {
+                setGameOverMessage('You win! AI ran out of time.');
+                setGameOverModalVisible(true);
+              }
+              return 0;
+            }
+            return prev - 1;
+          });
+        }
+      }, 1000);
+    }
+  };
+
+  // Start timer when turn changes
+  useEffect(() => {
+    // Clear existing timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    // Start new timer
+    startTimer();
+    
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [currentTurn, gameOverModalVisible, exitModalVisible, promotionModalVisible, isPlay, mode, chess]);
+
+  // AI move effect - separate from timer
   useEffect(() => {
     if (currentTurn === 'b' && !gameOverModalVisible && isPlay) {
-      setTimeout(() => aiMove(level), 1500);
+      setTimeout(() => {
+        aiMove(level);
+      }, 1500);
     }
   }, [currentTurn, gameOverModalVisible, level, isPlay]);
 
@@ -189,38 +288,41 @@ export default function ChessAiApp() {
     const moves = chess.moves({ verbose: true });
     if (moves.length > 0) {
       let bestMove;
-      if (level === 'easy') {
-        bestMove = moves[Math.floor(Math.random() * moves.length)];
-      } else if (level === 'medium') {
+      
+      try {
+        if (level === 'easy') {
+          // Easy: Random moves with slight preference for captures
+          bestMove = getEasyMove(moves);
+        } else if (level === 'medium') {
+          // Medium: 1-ply lookahead with basic evaluation
+          bestMove = getMediumMove(moves);
+        } else if (level === 'hard') {
+          // Hard: Smart move selection with chess principles
+          bestMove = getHardMove(moves);
+        }
+      } catch (error) {
+        console.warn('AI error, falling back to random move:', error);
+        bestMove = getEasyMove(moves);
+      }
+
+      // Safety check - ensure we have a valid move
+      if (!bestMove) {
+        console.warn('AI could not find a valid move, using first available move');
         bestMove = moves[0];
-        let highestValue = 0;
-        const pieceValues = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-        moves.forEach(move => {
-          if (move.captured) {
-            const value = pieceValues[move.captured.toLowerCase()];
-            if (value > highestValue) {
-              highestValue = value;
-              bestMove = move;
-            }
-          }
-        });
-      } else if (level === 'hard') {
-        bestMove = moves.reduce((best, move) => {
-          chess.move(move);
-          const evaluation = evaluateBoard(chess);
-          chess.undo();
-          return evaluation > best.evaluation ? { move, evaluation } : best;
-        }, { move: moves[0], evaluation: -Infinity }).move;
       }
 
       const moveResult = chess.move(bestMove);
       if (moveResult) {
+        console.log('AI Move made:', bestMove);
+        console.log('AI Move result:', moveResult);
         setGameFEN(chess.fen());
         setCurrentTurn(chess.turn());
         const newCapturedPieces = calculateCapturedPieces();
+        console.log('AI New captured pieces:', newCapturedPieces);
         setCapturedPieces(newCapturedPieces);
         
         if (moveResult.captured) {
+          console.log('AI captured piece:', moveResult.captured);
           playSound(captureSound);
         } else if (moveResult.flags.includes('k') || moveResult.flags.includes('q')) {
           playSound(castleSound);
@@ -235,26 +337,302 @@ export default function ChessAiApp() {
     }
   };
 
-  const evaluateBoard = (chess) => {
-    const board = chess.board();
-    const pieceValues = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-    let evaluation = 0;
+  // Piece values for evaluation
+  const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+  
+  // Position values for better piece placement
+  const PAWN_POSITION_VALUES = [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [50, 50, 50, 50, 50, 50, 50, 50],
+    [10, 10, 20, 30, 30, 20, 10, 10],
+    [5,  5, 10, 25, 25, 10,  5,  5],
+    [0,  0,  0, 20, 20,  0,  0,  0],
+    [5, -5,-10,  0,  0,-10, -5,  5],
+    [5, 10, 10,-20,-20, 10, 10,  5],
+    [0,  0,  0,  0,  0,  0,  0,  0]
+  ];
 
-    board.forEach(row => {
-      row.forEach(square => {
-        if (square) {
-          evaluation += (square.color === 'w' ? pieceValues[square.type.toLowerCase()] : -pieceValues[square.type.toLowerCase()]);
-        }
-      });
+  const KNIGHT_POSITION_VALUES = [
+    [-50,-40,-30,-30,-30,-30,-40,-50],
+    [-40,-20,  0,  0,  0,  0,-20,-40],
+    [-30,  0, 10, 15, 15, 10,  0,-30],
+    [-30,  5, 15, 20, 20, 15,  5,-30],
+    [-30,  0, 15, 20, 20, 15,  0,-30],
+    [-30,  5, 10, 15, 15, 10,  5,-30],
+    [-40,-20,  0,  5,  5,  0,-20,-40],
+    [-50,-40,-30,-30,-30,-30,-40,-50]
+  ];
+
+  const BISHOP_POSITION_VALUES = [
+    [-20,-10,-10,-10,-10,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5, 10, 10,  5,  0,-10],
+    [-10,  5,  5, 10, 10,  5,  5,-10],
+    [-10,  0, 10, 10, 10, 10,  0,-10],
+    [-10, 10, 10, 10, 10, 10, 10,-10],
+    [-10,  5,  0,  0,  0,  0,  5,-10],
+    [-20,-10,-10,-10,-10,-10,-10,-20]
+  ];
+
+  const ROOK_POSITION_VALUES = [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [5, 10, 10, 10, 10, 10, 10,  5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [0,  0,  0,  5,  5,  0,  0,  0]
+  ];
+
+  const QUEEN_POSITION_VALUES = [
+    [-20,-10,-10, -5, -5,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5,  5,  5,  5,  0,-10],
+    [-5,  0,  5,  5,  5,  5,  0, -5],
+    [0,  0,  5,  5,  5,  5,  0, -5],
+    [-10,  5,  5,  5,  5,  5,  0,-10],
+    [-10,  0,  5,  0,  0,  0,  0,-10],
+    [-20,-10,-10, -5, -5,-10,-10,-20]
+  ];
+
+  const KING_POSITION_VALUES = [
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-20,-30,-30,-40,-40,-30,-30,-20],
+    [-10,-20,-20,-20,-20,-20,-20,-10],
+    [20, 20,  0,  0,  0,  0, 20, 20],
+    [20, 30, 10,  0,  0, 10, 30, 20]
+  ];
+
+  // Easy AI: Random moves with slight preference for captures
+  const getEasyMove = (moves) => {
+    const captures = moves.filter(move => move.captured);
+    if (captures.length > 0 && Math.random() < 0.7) {
+      return captures[Math.floor(Math.random() * captures.length)];
+    }
+    return moves[Math.floor(Math.random() * moves.length)];
+  };
+
+  // Medium AI: 1-ply lookahead with randomization
+  const getMediumMove = (moves) => {
+    if (moves.length === 0) return null;
+    
+    const scoredMoves = moves.map(move => {
+      chess.move(move);
+      const score = evaluateBoard(chess);
+      chess.undo();
+      return { move, score };
     });
 
-    return evaluation;
+    // Sort by score (best first)
+    scoredMoves.sort((a, b) => b.score - a.score);
+    
+    // Add some randomization - choose from top 3-5 moves
+    const topMoves = Math.min(5, Math.max(3, Math.floor(moves.length * 0.3)));
+    const randomIndex = Math.floor(Math.random() * topMoves);
+    
+    // Safety check
+    if (scoredMoves[randomIndex] && scoredMoves[randomIndex].move) {
+      return scoredMoves[randomIndex].move;
+    }
+    
+    // Fallback to first move if something goes wrong
+    return scoredMoves[0] ? scoredMoves[0].move : moves[0];
+  };
+
+  // Hard AI: Smart move selection without minimax
+  const getHardMove = (moves) => {
+    if (moves.length === 0) return null;
+    
+    // Prioritize moves by importance
+    const prioritizedMoves = moves.map(move => {
+      let score = 0;
+      
+      // Capture moves get high priority
+      if (move.captured) {
+        const pieceValues = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+        score += pieceValues[move.captured.toLowerCase()] * 100;
+      }
+      
+      // Check moves get priority
+      if (move.flags.includes('+')) {
+        score += 50;
+      }
+      
+      // Center control
+      const centerSquares = ['d4', 'd5', 'e4', 'e5'];
+      if (centerSquares.includes(move.to)) {
+        score += 30;
+      }
+      
+      // Development moves (moving pieces from starting positions)
+      if (move.piece === 'p' && (move.from.includes('7') || move.from.includes('2'))) {
+        score += 20;
+      }
+      
+      // Castling
+      if (move.flags.includes('k') || move.flags.includes('q')) {
+        score += 40;
+      }
+      
+      // Pawn advancement
+      if (move.piece === 'p') {
+        const fromRank = parseInt(move.from[1]);
+        const toRank = parseInt(move.to[1]);
+        const advancement = Math.abs(toRank - fromRank);
+        score += advancement * 10;
+      }
+      
+      // Piece activity (moving to more active squares)
+      const pieceActivity = getPieceActivity(move.to);
+      score += pieceActivity;
+      
+      return { move, score };
+    });
+
+    // Sort by score (best first)
+    prioritizedMoves.sort((a, b) => b.score - a.score);
+    
+    // Choose from top 3-5 moves for variety
+    const topMoves = Math.min(5, Math.max(3, Math.floor(prioritizedMoves.length * 0.4)));
+    const randomIndex = Math.floor(Math.random() * topMoves);
+    
+    return prioritizedMoves[randomIndex].move;
+  };
+
+  // Helper function to calculate piece activity
+  const getPieceActivity = (square) => {
+    const [file, rank] = [square.charCodeAt(0) - 97, parseInt(square[1])];
+    let activity = 0;
+    
+    // Prefer central squares
+    if (file >= 3 && file <= 4 && rank >= 3 && rank <= 6) {
+      activity += 20;
+    }
+    
+    // Prefer squares that attack enemy territory
+    if (rank >= 4) {
+      activity += 10;
+    }
+    
+    return activity;
+  };
+
+  // Optimized minimax algorithm with alpha-beta pruning
+  const minimax = (game, depth, alpha, beta, maximizingPlayer) => {
+    if (depth === 0 || game.isGameOver()) {
+      return { move: null, evaluation: evaluateBoard(game) };
+    }
+
+    const moves = game.moves({ verbose: true });
+    
+    // Limit moves for performance (max 15 moves per level)
+    const limitedMoves = moves.slice(0, 15);
+    
+    let bestMove = limitedMoves[0];
+    let bestEvaluation = maximizingPlayer ? -Infinity : Infinity;
+
+    for (const move of limitedMoves) {
+      game.move(move);
+      const evaluation = minimax(game, depth - 1, alpha, beta, !maximizingPlayer).evaluation;
+      game.undo();
+
+      if (maximizingPlayer) {
+        if (evaluation > bestEvaluation) {
+          bestEvaluation = evaluation;
+          bestMove = move;
+        }
+        alpha = Math.max(alpha, evaluation);
+      } else {
+        if (evaluation < bestEvaluation) {
+          bestEvaluation = evaluation;
+          bestMove = move;
+        }
+        beta = Math.min(beta, evaluation);
+      }
+
+      // Alpha-beta pruning
+      if (beta <= alpha) {
+        break;
+      }
+    }
+
+    return { move: bestMove, evaluation: bestEvaluation };
+  };
+
+  // Add some randomness to evaluation to create variety
+  const addEvaluationRandomness = (evaluation) => {
+    // Add small random factor to break ties and create variety
+    const randomFactor = (Math.random() - 0.5) * 20; // ±10 points
+    return evaluation + randomFactor;
+  };
+
+  // Enhanced board evaluation with position values
+  const evaluateBoard = (chess) => {
+    const board = chess.board();
+    let evaluation = 0;
+
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const square = board[row][col];
+        if (square) {
+          const pieceValue = PIECE_VALUES[square.type.toLowerCase()];
+          let positionValue = 0;
+
+          // Get position value based on piece type
+          if (square.type.toLowerCase() === 'p') {
+            positionValue = square.color === 'w' ? PAWN_POSITION_VALUES[row][col] : PAWN_POSITION_VALUES[7-row][col];
+          } else if (square.type.toLowerCase() === 'n') {
+            positionValue = square.color === 'w' ? KNIGHT_POSITION_VALUES[row][col] : KNIGHT_POSITION_VALUES[7-row][col];
+          } else if (square.type.toLowerCase() === 'b') {
+            positionValue = square.color === 'w' ? BISHOP_POSITION_VALUES[row][col] : BISHOP_POSITION_VALUES[7-row][col];
+          } else if (square.type.toLowerCase() === 'r') {
+            positionValue = square.color === 'w' ? ROOK_POSITION_VALUES[row][col] : ROOK_POSITION_VALUES[7-row][col];
+          } else if (square.type.toLowerCase() === 'q') {
+            positionValue = square.color === 'w' ? QUEEN_POSITION_VALUES[row][col] : QUEEN_POSITION_VALUES[7-row][col];
+          } else if (square.type.toLowerCase() === 'k') {
+            positionValue = square.color === 'w' ? KING_POSITION_VALUES[row][col] : KING_POSITION_VALUES[7-row][col];
+          }
+
+          const totalValue = pieceValue * 100 + positionValue;
+          evaluation += square.color === 'w' ? totalValue : -totalValue;
+        }
+      }
+    }
+
+    // Add mobility bonus
+    const currentTurn = chess.turn();
+    const currentMoves = chess.moves({ verbose: true }).length;
+    
+    // Create a temporary chess instance to count opponent moves
+    const tempChess = new Chess(chess.fen());
+    tempChess.turn = tempChess.turn() === 'w' ? 'b' : 'w';
+    const opponentMoves = tempChess.moves({ verbose: true }).length;
+    
+    evaluation += (currentTurn === 'w' ? currentMoves - opponentMoves : opponentMoves - currentMoves) * 10;
+
+    // Add center control bonus
+    const centerSquares = ['d4', 'd5', 'e4', 'e5'];
+    centerSquares.forEach(square => {
+      const piece = chess.get(square);
+      if (piece) {
+        const bonus = piece.color === 'w' ? 20 : -20;
+        evaluation += bonus;
+      }
+    });
+
+    // Add some randomness for variety
+    return addEvaluationRandomness(evaluation);
   };
 
   const calculateCapturedPieces = () => {
     const currentPieces = { white: [], black: [] };
     const board = chess.board();
 
+    // Count current pieces on the board
     board.forEach(row => {
       row.forEach(square => {
         if (square) {
@@ -267,9 +645,57 @@ export default function ChessAiApp() {
       });
     });
 
+    // Calculate captured pieces by comparing with initial pieces
+    const capturedWhite = [];
+    const capturedBlack = [];
+
+    // Count initial pieces
+    const initialWhiteCount = { 'P': 8, 'R': 2, 'N': 2, 'B': 2, 'Q': 1, 'K': 1 };
+    const initialBlackCount = { 'p': 8, 'r': 2, 'n': 2, 'b': 2, 'q': 1, 'k': 1 };
+
+    // Count current pieces
+    const currentWhiteCount = {};
+    const currentBlackCount = {};
+    
+    currentPieces.white.forEach(piece => {
+      currentWhiteCount[piece] = (currentWhiteCount[piece] || 0) + 1;
+    });
+    
+    currentPieces.black.forEach(piece => {
+      currentBlackCount[piece] = (currentBlackCount[piece] || 0) + 1;
+    });
+
+    // Calculate captured pieces
+    Object.keys(initialWhiteCount).forEach(piece => {
+      const initialCount = initialWhiteCount[piece];
+      const currentCount = currentWhiteCount[piece] || 0;
+      const capturedCount = initialCount - currentCount;
+      for (let i = 0; i < capturedCount; i++) {
+        capturedWhite.push(piece);
+      }
+    });
+
+    Object.keys(initialBlackCount).forEach(piece => {
+      const initialCount = initialBlackCount[piece];
+      const currentCount = currentBlackCount[piece] || 0;
+      const capturedCount = initialCount - currentCount;
+      for (let i = 0; i < capturedCount; i++) {
+        capturedBlack.push(piece);
+      }
+    });
+
+    console.log('AI Captured pieces calculation:');
+    console.log('Current white pieces on board:', currentPieces.white);
+    console.log('Current black pieces on board:', currentPieces.black);
+    console.log('Missing white pieces (captured by black):', capturedWhite);
+    console.log('Missing black pieces (captured by white):', capturedBlack);
+    console.log('Final result - White player captured:', capturedBlack);
+    console.log('Final result - Black player (AI) captured:', capturedWhite);
+    console.log('Piece images available:', Object.keys(pieceImages));
+
     return {
-      white: initialPieces.black.filter(piece => !currentPieces.black.includes(piece)),
-      black: initialPieces.white.filter(piece => !currentPieces.white.includes(piece)),
+      white: capturedBlack, // White player captured black pieces (show black piece images)
+      black: capturedWhite, // Black player (AI) captured white pieces (show white piece images)
     };
   };
 
@@ -278,8 +704,15 @@ export default function ChessAiApp() {
   };
 
   const handleConfirmExit = () => {
+    // Mark component as unmounted to prevent timer from running
+    isMountedRef.current = false;
+    // Clear timer before exiting
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     resetGame();
-    navigation.navigate('index');
+    router.push('/');
     setExitModalVisible(false);
     setGameOverModalVisible(false);
   };
@@ -290,19 +723,17 @@ export default function ChessAiApp() {
 
   useEffect(() => {
     const backAction = () => {
-      if (!gameOverModalVisible && !promotionModalVisible && !exitModalVisible) {
+      // Always prevent back navigation during game
+      if (!exitModalVisible && !gameOverModalVisible) {
+        // Show exit confirmation modal when back button is pressed
         setExitModalVisible(true);
-        return true;
       }
-      return false;
+      return true; // Always prevent default back behavior
     };
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
-  }, [gameOverModalVisible, promotionModalVisible, exitModalVisible]);
+  }, [exitModalVisible, gameOverModalVisible]);
 
-  const handleLevelChange = (selectedLevel) => {
-    setLevel(selectedLevel);
-  };
 
   const onSquarePress = (rowIndex, colIndex) => {
     if (!isPlay || currentTurn !== 'w') return;
@@ -321,12 +752,16 @@ export default function ChessAiApp() {
       if (move) {
         const moveResult = chess.move({ from: selectedSquare, to: square, promotion: 'q' });
         if (moveResult) {
+          console.log('Human Move made:', { from: selectedSquare, to: square });
+          console.log('Human Move result:', moveResult);
           setGameFEN(chess.fen());
           setCurrentTurn(chess.turn());
           const newCapturedPieces = calculateCapturedPieces();
+          console.log('Human New captured pieces:', newCapturedPieces);
           setCapturedPieces(newCapturedPieces);
 
           if (moveResult.captured) {
+            console.log('Human captured piece:', moveResult.captured);
             playSound(captureSound);
           } else if (moveResult.flags.includes('k') || moveResult.flags.includes('q')) {
             playSound(castleSound);
@@ -428,22 +863,36 @@ export default function ChessAiApp() {
     setIsPlay(true);
     setPauseName("Pause");
     setMoveHistory([]);
+    setGameOverModalVisible(false);
+    setGameOverMessage('');
+    setShowAiCaptured(false);
+    setShowHumanCaptured(false);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
   };
 
   const updateTimersAfterMove = () => {
     if (mode === 'classic') {
+      // Reset both timers to 60 seconds after each move
       setWhiteTimer(60);
       setBlackTimer(60);
     } else if (mode === 'rush') {
+      // Reset both timers to 20 seconds after each move
       setWhiteTimer(20);
       setBlackTimer(20);
     } else if (mode === 'blitz') {
+      // Add 2 seconds to the timer of the player who just moved (max 30)
       if (currentTurn === 'w') {
-        setBlackTimer(prev => Math.min(prev + 2, 30));
-      } else {
+        // White just moved, add time to white's timer (the player who moved)
         setWhiteTimer(prev => Math.min(prev + 2, 30));
+      } else {
+        // Black just moved, add time to black's timer (the player who moved)
+        setBlackTimer(prev => Math.min(prev + 2, 30));
       }
     }
+    // For unlimited mode, no timer updates needed
   };
 
   const checkGameOver = () => {
@@ -485,6 +934,7 @@ export default function ChessAiApp() {
 
   const formatTime = (seconds) => {
     if (mode === 'unlimited') return '∞';
+    if (!seconds || isNaN(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -492,73 +942,99 @@ export default function ChessAiApp() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" hidden translucent />
       
-      {/* Minimalistic Header */}
-      <View style={styles.headerContainer}>
-        <TouchableOpacity onPress={() =>{playClick(),handleExit()}} style={styles.headerButton}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+      {/* Responsive Header */}
+      <View style={[styles.headerContainer, { height: getResponsiveSpacing(70) }]}>
+        <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(),handleExit()}} style={[styles.headerButton, { width: getResponsiveSpacing(40), height: getResponsiveSpacing(40) }]}>
+          <Ionicons name="arrow-back" size={getResponsiveFontSize(24)} color="#FFFFFF" />
         </TouchableOpacity>
         
         <View style={styles.headerCenter}>
-          <Text style={styles.gameMode}>{mode.toUpperCase()}</Text>
-          <Text style={styles.gameModeSubtext}>vs AI ({level})</Text>
+          <Text style={[styles.gameMode, { fontSize: getResponsiveFontSize(18) }]}>{(mode || 'classic').toUpperCase()}</Text>
+          <Text style={[styles.gameModeSubtext, { fontSize: getResponsiveFontSize(12) }]}>vs AI ({level || 'medium'})</Text>
         </View>
 
-        <TouchableOpacity onPress={() =>{playClick(),toggleSidebar()}} style={styles.headerButton}>
-          <Ionicons name="settings" size={24} color="#FFFFFF" />
+        <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(),toggleSidebar()}} style={[styles.headerButton, { width: getResponsiveSpacing(40), height: getResponsiveSpacing(40) }]}>
+          <Ionicons name="settings" size={getResponsiveFontSize(24)} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
       {/* Player Section - AI */}
-      <View style={styles.playerSection}>
-        <View style={styles.playerCard}>
-          <View style={styles.playerInfo}>
-            <View style={styles.playerAvatar}>
-              <Ionicons name="hardware-chip" size={20} color="#FFFFFF" />
-            </View>
-            <View style={styles.playerDetails}>
-              <Text style={styles.playerName}>AI</Text>
-              <Text style={styles.statusText}>
-                {currentTurn === 'b' ? 'Thinking...' : 'Waiting'}
-              </Text>
-            </View>
-          </View>
-          {mode !== 'unlimited' && (
-            <View style={styles.timerContainer}>
-              <Text style={[styles.timerText, blackTimer <= 10 ? styles.urgentTimer : null]}>
-                {formatTime(blackTimer)}
-              </Text>
+      <View style={[styles.playerSection, { paddingVertical: getResponsiveSpacing(8) }]}>
+        <TouchableOpacity 
+          style={[styles.playerCard, { padding: getResponsiveSpacing(12) }]}
+          onPress={() => {clickSoundContext?.playClick?.(), setShowAiCaptured(!showAiCaptured)}}
+        >
+          {!showAiCaptured ? (
+            <>
+              <View style={styles.playerInfo}>
+                <View style={[styles.playerAvatar, { width: getResponsiveSpacing(36), height: getResponsiveSpacing(36) }]}>
+                  <Ionicons name="hardware-chip" size={getResponsiveFontSize(20)} color="#FFFFFF" />
+                </View>
+                <View style={styles.playerDetails}>
+                  <Text style={[styles.playerName, { fontSize: getResponsiveFontSize(16) }]}>AI</Text>
+                  <Text style={[styles.statusText, { fontSize: getResponsiveFontSize(12) }]}>
+                    {(currentTurn || 'w') === 'b' ? 'Thinking...' : 'Waiting'}
+                  </Text>
+                </View>
+              </View>
+              {(mode || 'classic') !== 'unlimited' && (
+                <View style={[styles.timerContainer, { paddingHorizontal: getResponsiveSpacing(12), paddingVertical: getResponsiveSpacing(6) }]}>
+                  <Text style={[styles.timerText, blackTimer <= 10 ? styles.urgentTimer : null, { fontSize: getResponsiveFontSize(14) }]}>
+                    {formatTime(blackTimer || 0)}
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.capturedPiecesContainer}>
+              <View style={styles.capturedHeader}>
+                <Text style={[styles.capturedLabel, { fontSize: getResponsiveFontSize(12) }]}>Captured by AI</Text>
+                {(mode || 'classic') !== 'unlimited' && (
+                  <View style={[styles.timerContainer, { paddingHorizontal: getResponsiveSpacing(8), paddingVertical: getResponsiveSpacing(4) }]}>
+                    <Text style={[styles.timerText, blackTimer <= 10 ? styles.urgentTimer : null, { fontSize: getResponsiveFontSize(12) }]}>
+                      {formatTime(blackTimer || 0)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={styles.capturedScrollView}
+                contentContainerStyle={styles.capturedScrollContent}
+              >
+                {capturedPieces.black.map((piece, index) => {
+                  console.log(`Rendering AI captured piece ${index}:`, piece, 'Image source:', pieceImages[piece]);
+                  return (
+                    <Image
+                      key={index}
+                      source={pieceImages[piece]}
+                      style={[styles.capturedPieceImage, { 
+                        width: Math.max(20, squareSize * 0.4), 
+                        height: Math.max(20, squareSize * 0.4) 
+                      }]}
+                    />
+                  );
+                })}
+                {capturedPieces.black.length === 0 && (
+                  <Text style={[styles.noCapturedText, { fontSize: getResponsiveFontSize(10) }]}>None</Text>
+                )}
+              </ScrollView>
             </View>
           )}
-        </View>
+        </TouchableOpacity>
 
-        {/* Captured Pieces - Top */}
-        {/* <View style={styles.capturedSection}>
-          <Text style={styles.capturedLabel}>Captured by You</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.capturedScrollView}
-            contentContainerStyle={styles.capturedScrollContent}
-          >
-            {capturedPieces.black.map((piece, index) => (
-              <Image
-                key={index}
-                source={pieceImages[piece]}
-                style={styles.capturedPieceImage}
-              />
-            ))}
-            {capturedPieces.black.length === 0 && (
-              <Text style={styles.noCapturedText}>None</Text>
-            )}
-          </ScrollView>
-        </View> */}
       </View>
 
-      {/* Chess Board - Minimalistic */}
-      <View style={styles.boardSection}>
-        <View style={styles.chessboardContainer}>
+      {/* Chess Board - Responsive */}
+      <View style={[styles.boardSection, { flex: 1, minHeight: squareSize * 8 + 20 }]}>
+        <View style={[styles.chessboardContainer, { 
+          width: squareSize * 8 + 12, 
+          height: squareSize * 8 + 12,
+          padding: 6 
+        }]}>
           {renderBoard.map((row, rowIndex) => (
             <View key={rowIndex} style={styles.row}>
               {row.map((square, colIndex) => {
@@ -575,6 +1051,8 @@ export default function ChessAiApp() {
                     style={[
                       styles.square,
                       {
+                        width: squareSize,
+                        height: squareSize,
                         backgroundColor: (adjustedRow + adjustedCol) % 2 === 0 
                           ? selectedColor.light 
                           : selectedColor.dark
@@ -586,12 +1064,19 @@ export default function ChessAiApp() {
                     onPress={() => onSquarePress(adjustedRow, colIndex)}
                   >
                     {showMoves && isValidMove && !square && (
-                      <View style={styles.validMoveDot} />
+                      <View style={[styles.validMoveDot, { 
+                        width: Math.max(6, squareSize * 0.2), 
+                        height: Math.max(6, squareSize * 0.2),
+                        borderRadius: Math.max(3, squareSize * 0.1)
+                      }]} />
                     )}
                     {square && (
                       <Image 
                         source={pieceImages[square.color === 'w' ? square.type.toUpperCase() : square.type]} 
-                        style={styles.pieceImage} 
+                        style={[styles.pieceImage, { 
+                          width: squareSize * 0.9, 
+                          height: squareSize * 0.9 
+                        }]} 
                       />
                     )}
                   </TouchableOpacity>
@@ -603,107 +1088,121 @@ export default function ChessAiApp() {
       </View>
 
       {/* Player Section - Human */}
-      <View style={styles.playerSection}>
+      <View style={[styles.playerSection, { paddingVertical: getResponsiveSpacing(8) }]}>
         {/* Captured Pieces - Bottom */}
-        {/* <View style={styles.capturedSection}>
-          <Text style={styles.capturedLabel}>Captured by AI</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.capturedScrollView}
-            contentContainerStyle={styles.capturedScrollContent}
-          >
-            {capturedPieces.white.map((piece, index) => (
-              <Image
-                key={index}
-                source={pieceImages[piece]}
-                style={styles.capturedPieceImage}
-              />
-            ))}
-            {capturedPieces.white.length === 0 && (
-              <Text style={styles.noCapturedText}>None</Text>
-            )}
-          </ScrollView>
-        </View> */}
+        
 
-        <View style={styles.playerCard}>
-          <View style={styles.playerInfo}>
-            <View style={styles.playerAvatar}>
-              <Ionicons name="person" size={20} color="#FFFFFF" />
-            </View>
-            <View style={styles.playerDetails}>
-              <Text style={styles.playerName}>You</Text>
-              <Text style={styles.statusText}>
-                {currentTurn === 'w' ? 'Your Turn' : 'Waiting'}
-              </Text>
-            </View>
-          </View>
-          {mode !== 'unlimited' && (
-            <View style={styles.timerContainer}>
-              <Text style={[styles.timerText, whiteTimer <= 10 ? styles.urgentTimer : null]}>
-                {formatTime(whiteTimer)}
-              </Text>
+        <TouchableOpacity 
+          style={[styles.playerCard, { padding: getResponsiveSpacing(12) }]}
+          onPress={() => {clickSoundContext?.playClick?.(), setShowHumanCaptured(!showHumanCaptured)}}
+        >
+          {!showHumanCaptured ? (
+            <>
+              <View style={styles.playerInfo}>
+                <View style={[styles.playerAvatar, { width: getResponsiveSpacing(36), height: getResponsiveSpacing(36) }]}>
+                  <Ionicons name="person" size={getResponsiveFontSize(20)} color="#FFFFFF" />
+                </View>
+                <View style={styles.playerDetails}>
+                  <Text style={[styles.playerName, { fontSize: getResponsiveFontSize(16) }]}>You</Text>
+                  <Text style={[styles.statusText, { fontSize: getResponsiveFontSize(12) }]}>
+                    {(currentTurn || 'w') === 'w' ? 'Your Turn' : 'Waiting'}
+                  </Text>
+                </View>
+              </View>
+              {(mode || 'classic') !== 'unlimited' && (
+                <View style={[styles.timerContainer, { paddingHorizontal: getResponsiveSpacing(12), paddingVertical: getResponsiveSpacing(6) }]}>
+                  <Text style={[styles.timerText, whiteTimer <= 10 ? styles.urgentTimer : null, { fontSize: getResponsiveFontSize(14) }]}>
+                    {formatTime(whiteTimer || 0)}
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.capturedPiecesContainer}>
+              <View style={styles.capturedHeader}>
+                <Text style={[styles.capturedLabel, { fontSize: getResponsiveFontSize(12) }]}>Captured by You</Text>
+                {(mode || 'classic') !== 'unlimited' && (
+                  <View style={[styles.timerContainer, { paddingHorizontal: getResponsiveSpacing(8), paddingVertical: getResponsiveSpacing(4) }]}>
+                    <Text style={[styles.timerText, whiteTimer <= 10 ? styles.urgentTimer : null, { fontSize: getResponsiveFontSize(12) }]}>
+                      {formatTime(whiteTimer || 0)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={styles.capturedScrollView}
+                contentContainerStyle={styles.capturedScrollContent}
+              >
+                {capturedPieces.white.map((piece, index) => {
+                  console.log(`Rendering Human captured piece ${index}:`, piece, 'Image source:', pieceImages[piece]);
+                  return (
+                    <Image
+                      key={index}
+                      source={pieceImages[piece]}
+                      style={[styles.capturedPieceImage, { 
+                        width: Math.max(20, squareSize * 0.4), 
+                        height: Math.max(20, squareSize * 0.4) 
+                      }]}
+                    />
+                  );
+                })}
+                {capturedPieces.white.length === 0 && (
+                  <Text style={[styles.noCapturedText, { fontSize: getResponsiveFontSize(10) }]}>None</Text>
+                )}
+              </ScrollView>
             </View>
           )}
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Control Panel */}
-      <View style={styles.controlPanel}>
-        <TouchableOpacity style={styles.undoButton} onPress={() =>{playClick(),handleUndo()}}>
-          <Ionicons name="arrow-undo" size={18} color="#FFFFFF" />
-          <Text style={styles.undoButtonText}>Undo</Text>
+      <View style={[styles.controlPanel, { paddingVertical: getResponsiveSpacing(10) }]}>
+        <TouchableOpacity style={[styles.undoButton, { paddingHorizontal: getResponsiveSpacing(16), paddingVertical: getResponsiveSpacing(10) }]} onPress={() =>{clickSoundContext?.playClick?.(),handleUndo()}}>
+          <Ionicons name="arrow-undo" size={getResponsiveFontSize(18)} color="#FFFFFF" />
+          <Text style={[styles.undoButtonText, { fontSize: getResponsiveFontSize(14) }]}>Undo</Text>
         </TouchableOpacity>
       </View>
 
       {/* Minimalistic Sidebar */}
       {isSidebarOpen && (
         <>
-          <TouchableOpacity style={styles.overlay} onPress={() =>{playClick(),toggleSidebar()}} />
+          <TouchableOpacity style={styles.overlay} onPress={() =>{clickSoundContext?.playClick?.(),toggleSidebar()}} />
           <View style={styles.sidebar}>
-            <TouchableOpacity style={styles.closeButton} onPress={() =>{playClick(),toggleSidebar()}}>
+            <TouchableOpacity style={styles.closeButton} onPress={() =>{clickSoundContext?.playClick?.(),toggleSidebar()}}>
               <Ionicons name="close" size={24} color="#FFFFFF" />
             </TouchableOpacity>
             
             <Text style={styles.sidebarTitle}>Settings</Text>
 
-            {/* AI Level Selection - Minimalistic */}
+            {/* AI Level Display - Read Only */}
             <View style={styles.levelSection}>
               <Text style={styles.sectionTitle}>AI Difficulty</Text>
-              <View style={styles.levelSelectorContainer}>
-                <Ionicons name="hardware-chip" size={18} color="#FFFFFF" />
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={level}
-                    style={styles.picker}
-                    onValueChange={() =>{playClick(),handleLevelChange()}}
-                    mode="dropdown"
-                    dropdownIconColor="#FFFFFF"
-                  >
-                    <Picker.Item label="Easy" value="easy" color="#FFFFFF" />
-                    <Picker.Item label="Medium" value="medium" color="#FFFFFF" />
-                    <Picker.Item label="Hard" value="hard" color="#FFFFFF" />
-                  </Picker>
-                </View>
+              <View style={styles.levelDisplayContainer}>
+                <Ionicons name="hardware-chip" size={18} color="#4ECDC4" />
+                <Text style={styles.levelDisplayText}>
+                  {(level || 'medium').charAt(0).toUpperCase() + (level || 'medium').slice(1)}
+                </Text>
               </View>
             </View>
 
-            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{playClick(),handlePauseResume()}}>
+            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{clickSoundContext?.playClick?.(),handlePauseResume()}}>
               <Ionicons name={isPlay ? "pause" : "play"} size={18} color="#FFFFFF" />
               <Text style={styles.sidebarButtonText}>{pauseName}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{playClick(),toggleBoardOrientation()}}>
+            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{clickSoundContext?.playClick?.(),toggleBoardOrientation()}}>
               <Ionicons name="swap-vertical" size={18} color="#FFFFFF" />
               <Text style={styles.sidebarButtonText}>Flip Board</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{playClick(),resetGame()}}>
+            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{clickSoundContext?.playClick?.(),resetGame()}}>
               <Ionicons name="refresh" size={18} color="#FFFFFF" />
               <Text style={styles.sidebarButtonText}>Restart</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{playClick(),handleExit()}}>
+            <TouchableOpacity style={styles.sidebarButton} onPress={() =>{clickSoundContext?.playClick?.(),handleExit()}}>
               <Ionicons name="exit" size={18} color="#FFFFFF" />
               <Text style={styles.sidebarButtonText}>Exit</Text>
             </TouchableOpacity>
@@ -715,7 +1214,7 @@ export default function ChessAiApp() {
                 <Text style={styles.toggleLabel}>Show Moves</Text>
                 <TouchableOpacity
                   style={[styles.toggleSwitch, showMoves ? styles.toggleSwitchOn : styles.toggleSwitchOff]}
-                  onPress={() =>{playClick(),toggleShowMoves()}}
+                  onPress={() =>{clickSoundContext?.playClick?.(),toggleShowMoves()}}
                 >
                   <View style={[styles.toggleKnob, showMoves ? styles.toggleKnobOn : styles.toggleKnobOff]} />
                 </TouchableOpacity>
@@ -727,15 +1226,15 @@ export default function ChessAiApp() {
               <View style={styles.colorPalette}>
                 <TouchableOpacity 
                   style={styles.colorOption1} 
-                  onPress={() =>{playClick(), handleColorChange('#EDEDED','#8B5A5A')}} 
+                  onPress={() =>{clickSoundContext?.playClick?.(), handleColorChange('#EDEDED','#8B5A5A')}} 
                 />
                 <TouchableOpacity 
                   style={styles.colorOption2} 
-                  onPress={() =>{playClick(), handleColorChange('#D3D3D3', '#A9A9A9')}} 
+                  onPress={() =>{clickSoundContext?.playClick?.(), handleColorChange('#D3D3D3', '#A9A9A9')}} 
                 />
                 <TouchableOpacity 
                   style={styles.colorOption3} 
-                  onPress={() =>{playClick(), handleColorChange('#FAF0E6', '#5F9EA0')} }
+                  onPress={() =>{clickSoundContext?.playClick?.(), handleColorChange('#FAF0E6', '#5F9EA0')} }
                 />
               </View>
             </View>
@@ -765,7 +1264,7 @@ export default function ChessAiApp() {
         visible={promotionModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() =>{playClick(), setPromotionModalVisible(false)}}
+        onRequestClose={() =>{clickSoundContext?.playClick?.(), setPromotionModalVisible(false)}}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -774,7 +1273,7 @@ export default function ChessAiApp() {
               {['q', 'r', 'b', 'n'].map(piece => (
                 <TouchableOpacity
                   key={piece}
-                  onPress={() =>{playClick(), handlePromotion(piece)}}
+                  onPress={() =>{clickSoundContext?.playClick?.(), handlePromotion(piece)}}
                   style={styles.promotionOption}
                 >
                   <Image source={pieceImages[piece]} style={styles.promotionPiece} />
@@ -789,18 +1288,21 @@ export default function ChessAiApp() {
         visible={gameOverModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() =>{playClick(), setGameOverModalVisible(false)}}
+        onRequestClose={() => {
+          // Don't close modal on back button, let user choose
+          return;
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Ionicons name="trophy" size={40} color="#FFFFFF" />
             <Text style={styles.modalTitle}>Game Over</Text>
-            <Text style={styles.gameOverMessage}>{gameOverMessage}</Text>
+            <Text style={styles.gameOverMessage}>{gameOverMessage || 'Game Over'}</Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalButton} onPress={() =>{playClick(),handleRematch()}}>
+              <TouchableOpacity style={styles.modalButton} onPress={() =>{clickSoundContext?.playClick?.(),handleRematch()}}>
                 <Text style={styles.modalButtonText}>Rematch</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButton} onPress={() =>{playClick(),handleExit()}}>
+              <TouchableOpacity style={styles.modalButton} onPress={() =>{clickSoundContext?.playClick?.(),handleConfirmExit()}}>
                 <Text style={styles.modalButtonText}>Exit</Text>
               </TouchableOpacity>
             </View>
@@ -812,7 +1314,7 @@ export default function ChessAiApp() {
         visible={exitModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() =>{playClick(), setExitModalVisible(false)}}
+        onRequestClose={() =>{clickSoundContext?.playClick?.(), setExitModalVisible(false)}}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -820,10 +1322,10 @@ export default function ChessAiApp() {
             <Text style={styles.modalTitle}>Leave Game?</Text>
             <Text style={styles.exitMessage}>Are you sure you want to leave?</Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalButton} onPress={() =>{playClick(),handleConfirmExit()}}>
+              <TouchableOpacity style={styles.modalButton} onPress={() =>{clickSoundContext?.playClick?.(),handleConfirmExit()}}>
                 <Text style={styles.modalButtonText}>Yes</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButton} onPress={() =>{playClick(),handleCancelModal()}}>
+              <TouchableOpacity style={styles.modalButton} onPress={() =>{clickSoundContext?.playClick?.(),handleCancelModal()}}>
                 <Text style={styles.modalButtonText}>No</Text>
               </TouchableOpacity>
             </View>
@@ -837,8 +1339,8 @@ export default function ChessAiApp() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop:35,
-    backgroundColor: '#000000',
+    paddingTop: 30,
+    backgroundColor: '#0F0F0F',
   },
   headerContainer: {
     flexDirection: 'row',
@@ -939,11 +1441,23 @@ const styles = StyleSheet.create({
     borderColor: '#333333',
     minHeight: 50,
   },
+  capturedPiecesContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  capturedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 6,
+  },
   capturedLabel: {
     color: '#AAAAAA',
     fontSize: 10,
-    marginBottom: 6,
     textAlign: 'center',
+    flex: 1,
   },
   capturedScrollView: {
     maxHeight: 30,
@@ -953,8 +1467,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   capturedPieceImage: {
-    width: squareSize * 0.4,
-    height: squareSize * 0.4,
     resizeMode: 'contain',
     margin: 2,
   },
@@ -983,8 +1495,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   square: {
-    width: squareSize,
-    height: squareSize,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 2,
@@ -1010,8 +1520,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#AA0000',
   },
   pieceImage: {
-    width: squareSize * 0.9,
-    height: squareSize * 0.9,
     resizeMode: 'contain',
     zIndex: 2,
   },
@@ -1083,7 +1591,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 10,
   },
-  levelSelectorContainer: {
+  levelDisplayContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#333333',
@@ -1092,14 +1600,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#555555',
+    justifyContent: 'center',
   },
-  pickerContainer: {
-    flex: 1,
-    marginLeft: 8,
-  },
-  picker: {
-    color: '#FFFFFF',
-    backgroundColor: 'transparent',
+  levelDisplayText: {
+    color: '#4ECDC4',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
   },
   sidebarButton: {
     flexDirection: 'row',
