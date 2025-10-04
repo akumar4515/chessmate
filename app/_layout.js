@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ExitConfirmProvider } from '../src/components/ExitConfirmProvider';
 import { useAndroidConfirmExitOnHome } from '../src/hooks/useAndroidConfirmAndExit';
 import { initClickSound, unloadClickSound } from '../src/utils/ClickSound';
+import ReduxProvider from '../src/components/ReduxProvider';
 
 import MusicProvider from './music.js';
 import ClickSoundProvider from './clickSound.js';
@@ -44,13 +45,15 @@ export default function Layout() {
   }, []);
 
   return (
-    <MusicProvider>
-      <ClickSoundProvider>
-        <ExitConfirmProvider>
-          <InnerLayout />
-        </ExitConfirmProvider>
-      </ClickSoundProvider>
-    </MusicProvider>
+    <ReduxProvider>
+      <MusicProvider>
+        <ClickSoundProvider>
+          <ExitConfirmProvider>
+            <InnerLayout />
+          </ExitConfirmProvider>
+        </ClickSoundProvider>
+      </MusicProvider>
+    </ReduxProvider>
   );
 }
 

@@ -23,6 +23,10 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import io from 'socket.io-client';
 import { ClickSoundContext } from './clickSound';
+
+// Redux imports
+import { useAppDispatch, useUserProfile } from '../src/hooks/reduxHooks';
+import { checkAuthStatus } from '../src/store/slices/userSlice';
 const { width } = Dimensions.get('window');
 const API_URL = 'https://chessmate-backend-lfxo.onrender.com';
 
@@ -43,6 +47,10 @@ let friendsDataCache = {
 let isRefreshing = false;
 
 export default function FriendsPageRedesigned() {
+  // Redux state
+  const dispatch = useAppDispatch();
+  const userProfile = useUserProfile();
+  
   // session
   const [user, setUser] = useState(friendsDataCache.user);
   const clickSoundContext = React.useContext(ClickSoundContext);
@@ -119,10 +127,48 @@ export default function FriendsPageRedesigned() {
     ]).start();
   }, []);
 
+  // Check authentication status on mount
+  useEffect(() => {
+    dispatch(checkAuthStatus());
+  }, [dispatch]);
+
+  // Simple authentication check using AsyncStorage as fallback
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        const userData = await AsyncStorage.getItem('user');
+        
+        if (token && userData) {
+          const parsedUser = JSON.parse(userData);
+          setUser(parsedUser);
+          userIdRef.current = parsedUser.id;
+          tokenRef.current = token;
+        } else {
+          setUser(null);
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        setUser(null);
+      }
+    };
+    
+    checkAuth();
+  }, []);
+
   // bootstrap
   useEffect(() => {
     let mounted = true;
     const initializeFriendsData = async () => {
+      // Check both Redux and local auth state
+      const isAuth = userProfile.isAuthenticated && userProfile.user;
+      const hasLocalUser = user && !user.guest;
+      
+      if (!isAuth && !hasLocalUser) {
+        console.log('❌ User not authenticated, skipping friends data initialization');
+        return;
+      }
+
       // If we have cached data, show it immediately and refresh in background
       if (friendsDataCache.user && friendsDataCache.friends) {
         setUser(friendsDataCache.user);
@@ -145,7 +191,7 @@ export default function FriendsPageRedesigned() {
       if (socketRef.current) socketRef.current.disconnect();
       if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
     };
-  }, []);
+  }, [userProfile.isAuthenticated, userProfile.user, user]);
 
   // refresh on focus
   useFocusEffect(
@@ -779,21 +825,67 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
     }
   };
 
-  if (!user || user.guest) {
+  // Debug: Log authentication state
+  console.log('🔍 Friend Page Auth Debug:', {
+    reduxAuth: userProfile.isAuthenticated,
+    reduxUser: userProfile.user,
+    localUser: user,
+    loading: userProfile.loading,
+    error: userProfile.error
+  });
+
+  // Check authentication using both Redux and local state
+  const isAuthenticated = (userProfile.isAuthenticated && userProfile.user) || (user && !user.guest);
+  const currentUser = userProfile.user || user;
+
+  // Show loading while checking authentication
+  if (userProfile.loading && !user) {
     return (
       <SafeAreaView style={styles.guestContainer}>
         <StatusBar barStyle="light-content" />
-        <Ionicons name="people-outline" size={64} color="#4ECDC4" />
-        <Text style={styles.guestTitle}>Friends Feature</Text>
-        <Text style={styles.guestText}>Please log in to connect with friends and play online chess matches.</Text>
-        <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), router.push('/User')}} style={styles.loginButton}>
-          <LinearGradient colors={['#4ECDC4', '#45B7D1']} style={styles.loginButtonGradient}>
-            <Text style={styles.loginButtonText}>Go to Login</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+        <ActivityIndicator size="large" color="#4ECDC4" />
+        <Text style={styles.guestText}>Checking authentication...</Text>
       </SafeAreaView>
     );
   }
+
+  // Show login screen if NOT authenticated, otherwise show friends
+  if (!isAuthenticated || !currentUser) {
+    return (
+      <SafeAreaView style={styles.guestContainer}>
+        <StatusBar barStyle="light-content" />
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+          <Ionicons name="people-outline" size={64} color="#4ECDC4" />
+          <Text style={styles.guestTitle}>Please Login</Text>
+          <Text style={styles.guestText}>
+            You need to be logged in to access the Friends feature.
+          </Text>
+          <Text style={styles.guestSubtext}>
+            Sign in to connect with friends and play online chess matches.
+          </Text>
+          <View style={styles.guestButtons}>
+            <TouchableOpacity 
+              onPress={() => {clickSoundContext?.playClick?.(), router.push('/User')}} 
+              style={styles.loginButton}
+            >
+              <LinearGradient colors={['#4ECDC4', '#45B7D1']} style={styles.loginButtonGradient}>
+                <Ionicons name="log-in-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.loginButtonText}>Login / Sign Up</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => {clickSoundContext?.playClick?.(), router.push('/')}} 
+              style={styles.backButton}
+            >
+              <Text style={styles.backButtonText}>Back to Home</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </SafeAreaView>
+    );
+  }
+
+  // If authenticated, show the friends list
 
   return (
     <SafeAreaView style={styles.container}>
@@ -959,12 +1051,65 @@ setChatMessages((prev) => [...prev, optimistic]); // ✅
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F0F0F',paddingTop: 30, },
-  guestContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, backgroundColor: '#0F0F0F' },
-  guestTitle: { color: '#EDEDED', fontSize: 28, fontWeight: 'bold', marginTop: 20, marginBottom: 10 },
-  guestText: { color: '#888', fontSize: 16, textAlign: 'center', lineHeight: 24, marginBottom: 30 },
-  loginButton: { width: 200 },
-  loginButtonGradient: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 25, alignItems: 'center' },
-  loginButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  guestContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingHorizontal: 40, 
+    backgroundColor: '#0F0F0F' 
+  },
+  guestTitle: { 
+    color: '#EDEDED', 
+    fontSize: 28, 
+    fontWeight: 'bold', 
+    marginTop: 20, 
+    marginBottom: 10 
+  },
+  guestText: { 
+    color: '#888', 
+    fontSize: 16, 
+    textAlign: 'center', 
+    lineHeight: 24, 
+    marginBottom: 15 
+  },
+  guestSubtext: { 
+    color: '#666', 
+    fontSize: 14, 
+    textAlign: 'center', 
+    lineHeight: 20, 
+    marginBottom: 40 
+  },
+  guestButtons: { 
+    width: '100%', 
+    alignItems: 'center' 
+  },
+  loginButton: { 
+    width: '100%', 
+    maxWidth: 280, 
+    marginBottom: 15 
+  },
+  loginButtonGradient: { 
+    paddingVertical: 15, 
+    paddingHorizontal: 30, 
+    borderRadius: 25, 
+    alignItems: 'center', 
+    flexDirection: 'row', 
+    justifyContent: 'center' 
+  },
+  loginButtonText: { 
+    color: '#FFFFFF', 
+    fontSize: 16, 
+    fontWeight: '600' 
+  },
+  backButton: { 
+    paddingVertical: 12, 
+    paddingHorizontal: 20 
+  },
+  backButtonText: { 
+    color: '#4ECDC4', 
+    fontSize: 14, 
+    fontWeight: '500' 
+  },
   header: { paddingTop: 10, paddingHorizontal: 20, paddingBottom: 15 },
   headerTitle: { color: '#EDEDED', fontSize: 32, fontWeight: 'bold', marginBottom: 15 },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1C', borderRadius: 15, paddingHorizontal: 15, height: 50, borderWidth: 1, borderColor: '#333' },
