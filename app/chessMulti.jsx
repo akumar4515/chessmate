@@ -32,7 +32,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import io from 'socket.io-client';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { ClickSoundContext } from './clickSound';
-import VideoAd from '../src/components/VideoAd';
 
 const { width, height } = Dimensions.get('window');
 

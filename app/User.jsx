@@ -271,7 +271,8 @@ export default function AuthPage() {
 
 
 
-  if (loading && !user) {
+  // Show loading screen during login/signup process
+  if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <View style={styles.loadingContent}>

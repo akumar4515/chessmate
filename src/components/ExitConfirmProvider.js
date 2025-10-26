@@ -2,7 +2,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { BackHandler } from 'react-native';
 import ExitConfirmDialog from '../../src/components/ExitConfirmDialog';
-import SessionManager from '../utils/sessionManager';
 
 const ExitConfirmCtx = createContext(null);
 
