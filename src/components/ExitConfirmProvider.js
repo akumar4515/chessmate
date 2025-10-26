@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { BackHandler } from 'react-native';
 import ExitConfirmDialog from '../../src/components/ExitConfirmDialog';
+import SessionManager from '../utils/sessionManager';
 
 const ExitConfirmCtx = createContext(null);
 
@@ -9,7 +10,24 @@ export function ExitConfirmProvider({ children }) {
   const [visible, setVisible] = useState(false);
   const open = useCallback(() => setVisible(true), []);
   const close = useCallback(() => setVisible(false), []);
-  const onExit = useCallback(() => { setVisible(false); BackHandler.exitApp(); }, []);
+  
+  const onExit = useCallback(async () => {
+    try {
+      console.log('User confirmed app exit - clearing session data...');
+      
+      // Clear all session data before exiting
+      await SessionManager.clearAllSessionData();
+      
+      setVisible(false);
+      BackHandler.exitApp();
+    } catch (error) {
+      console.error('Error clearing session on exit:', error);
+      // Still exit the app even if session clearing fails
+      setVisible(false);
+      BackHandler.exitApp();
+    }
+  }, []);
+  
   return (
     <ExitConfirmCtx.Provider value={{ open, close }}>
       {children}

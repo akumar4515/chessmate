@@ -91,6 +91,7 @@ export default function ChessMateHome() {
           </TouchableOpacity>
         </View>
 
+
         {/* Middle Section */}
         <View style={[styles.middle, { height: availableHeight * 0.15 }]}>
           <Image
