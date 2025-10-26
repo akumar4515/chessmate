@@ -5,12 +5,13 @@ import { useRouter, usePathname } from 'expo-router';
 const { width, height } = Dimensions.get('window');
 import { ClickSoundContext } from './clickSound';
 
-export default function BottomNav() {
+export default function BottomNav({ disabled = false }) {
   const router = useRouter();
   const pathname = usePathname();
   const clickSoundContext = React.useContext(ClickSoundContext);
 
   const handlePage = (nameOrPath) => {
+    if (disabled) return; // Don't navigate if disabled
     const path = nameOrPath === 'index' || nameOrPath === '/' ? '/' : `/${nameOrPath}`;
     if (pathname !== path) {
       router.push(path);
@@ -19,17 +20,25 @@ export default function BottomNav() {
 
   return (
     <SafeAreaView style={styles.footer}>
-      <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(),handlePage('/')} } style={styles.iconButton}>
+      <TouchableOpacity 
+        onPress={() =>{if (!disabled) clickSoundContext?.playClick?.(), handlePage('/')}} 
+        style={[styles.iconButton, disabled && styles.disabledButton]}
+        disabled={disabled}
+      >
         <Image
           source={require('../assets/images/home/home.png')}
-          style={[styles.footerIcon, pathname === '/' ? styles.activeIcon : null]}
+          style={[styles.footerIcon, pathname === '/' ? styles.activeIcon : null, disabled && styles.disabledIcon]}
         />
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), handlePage('Friend')}} style={styles.iconButton}>
+      <TouchableOpacity 
+        onPress={() =>{if (!disabled) clickSoundContext?.playClick?.(), handlePage('Friend')}} 
+        style={[styles.iconButton, disabled && styles.disabledButton]}
+        disabled={disabled}
+      >
         <Image
           source={require('../assets/images/home/frnd.png')}
-          style={[styles.footerIcon, pathname === '/Friend' ? styles.activeIcon : null]}
+          style={[styles.footerIcon, pathname === '/Friend' ? styles.activeIcon : null, disabled && styles.disabledIcon]}
         />
       </TouchableOpacity>
 
@@ -40,10 +49,14 @@ export default function BottomNav() {
         />
       </TouchableOpacity> */}
 
-      <TouchableOpacity onPress={() =>{clickSoundContext?.playClick?.(), handlePage('User')}} style={styles.iconButton}>
+      <TouchableOpacity 
+        onPress={() =>{if (!disabled) clickSoundContext?.playClick?.(), handlePage('User')}} 
+        style={[styles.iconButton, disabled && styles.disabledButton]}
+        disabled={disabled}
+      >
         <Image
           source={require('../assets/images/home/user.png')}
-          style={[styles.footerIconiii, pathname === '/User' ? styles.activeIcon : null]}
+          style={[styles.footerIconiii, pathname === '/User' ? styles.activeIcon : null, disabled && styles.disabledIcon]}
         />
       </TouchableOpacity>
     </SafeAreaView>
@@ -93,5 +106,12 @@ const styles = StyleSheet.create({
     height: Math.min(width * 0.18, 30),
     resizeMode: 'contain',
     tintColor: '#AAAAAA', // Inactive icons in light gray
+  },
+  disabledButton: {
+    opacity: 0.3,
+  },
+  disabledIcon: {
+    opacity: 0.3,
+    tintColor: '#666666', // Darker gray for disabled state
   }
 });

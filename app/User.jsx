@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ClickSoundContext } from './clickSound';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuthLoading } from '../src/contexts/AuthLoadingContext';
 
 const { width, height } = Dimensions.get('window');
 const API_URL = 'https://chessmate-backend-lfxo.onrender.com/api';
@@ -38,6 +39,7 @@ let isRefreshing = false;
 export default function AuthPage() {
   const router = useRouter();
   const clickSoundContext = React.useContext(ClickSoundContext);
+  const { setAuthLoading } = useAuthLoading();
 
   const [formType, setFormType] = useState('login');
   const [formData, setFormData] = useState({ username: '', email: '', password: '', confirmPassword: '' });
@@ -45,7 +47,6 @@ export default function AuthPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [updatingProfile, setUpdatingProfile] = useState(false);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [backPressedOnce, setBackPressedOnce] = useState(false);
   const [user, setUser] = useState(userDataCache); // Initialize with cached data
   const [editMode, setEditMode] = useState(false);
@@ -97,6 +98,10 @@ export default function AuthPage() {
           await AsyncStorage.removeItem('token'); 
           setUser(null);
         }
+      } else {
+        // No token or user data, ensure user is null
+        userDataCache = null;
+        setUser(null);
       }
     } catch (e) {
       console.error('Background refresh error:', e);
@@ -132,8 +137,8 @@ export default function AuthPage() {
   // Refresh data when user navigates back to this page
   useFocusEffect(
     React.useCallback(() => {
-      // Only refresh if we already have user data (not on initial load)
-      if (userDataCache && user) {
+      // Only refresh if we already have user data (not on initial load) and user is not null
+      if (userDataCache && user && user !== null) {
         refreshUserData(false);
       }
     }, [user])
@@ -201,6 +206,7 @@ export default function AuthPage() {
   const handleSubmit = async () => {
     if (!validateForm()) return;
     setLoading(true);
+    setAuthLoading(true); // Disable navigation during auth process
     try {
       const endpoint = formType === 'login' ? `${API_URL}/login` : `${API_URL}/signup`;
       const payload = formType === 'login'
@@ -226,6 +232,7 @@ export default function AuthPage() {
       showMessage(e.response?.data?.message || 'Something went wrong. Please try again.', 'error');
     } finally {
       setLoading(false);
+      setAuthLoading(false); // Re-enable navigation after auth process
     }
   };
 
@@ -251,6 +258,9 @@ export default function AuthPage() {
         clearTimeout(messageTimeoutRef.current); 
         messageTimeoutRef.current = null; 
       }
+      
+      // Navigate to home page after logout
+      router.push('/User?formType=login');
       
       console.log('Logout successful');
     } catch (e) {
@@ -317,7 +327,7 @@ const rate = { [grade]: true };
                 <LinearGradient colors={['#1E1E1E', '#151515']} style={styles.topBarBtn}><Text style={styles.topBarBtnText}>← Home</Text></LinearGradient>
               </TouchableOpacity>
               <Text style={styles.topBarTitle}>My Account</Text>
-              <TouchableOpacity onPress={async ()=>{await clickSoundContext?.playClick?.(), setShowLogoutModal(true)}} activeOpacity={0.85}>
+              <TouchableOpacity onPress={async ()=>{await clickSoundContext?.playClick?.(), handleLogout()}} activeOpacity={0.85}>
                 <LinearGradient colors={['#FF6B6B', '#FF8E8E']} style={styles.topBarBtn}><Text style={styles.topBarBtnText}>Logout</Text></LinearGradient>
               </TouchableOpacity>
             </View>
@@ -453,44 +463,6 @@ const rate = { [grade]: true };
         )}
 
 
-        {/* Logout Confirmation Modal */}
-        <Modal
-          visible={showLogoutModal}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowLogoutModal(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <LinearGradient colors={['#2A2A2A', '#1A1A1A']} style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Logout Confirmation</Text>
-                <Text style={styles.modalMessage}>Are you sure you want to logout?</Text>
-                
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity 
-                    onPress={async ()=>{await clickSoundContext?.playClick?.(), setShowLogoutModal(false)}} 
-                    activeOpacity={0.85}
-                    style={styles.modalButton}
-                  >
-                    <LinearGradient colors={['#666', '#555']} style={styles.modalButtonGradient}>
-                      <Text style={styles.modalButtonText}>Cancel</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    onPress={async ()=>{await clickSoundContext?.playClick?.(), setShowLogoutModal(false), handleLogout()}} 
-                    activeOpacity={0.85}
-                    style={styles.modalButton}
-                  >
-                    <LinearGradient colors={['#FF6B6B', '#FF8E8E']} style={styles.modalButtonGradient}>
-                      <Text style={styles.modalButtonText}>Yes, Logout</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              </LinearGradient>
-            </View>
-          </View>
-        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -597,54 +569,5 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
   },
 
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    width: '80%',
-    maxWidth: 300,
-  },
-  modalContent: {
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-  },
-  modalTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  modalMessage: {
-    color: '#AAAAAA',
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 24,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  modalButton: {
-    flex: 1,
-  },
-  modalButtonGradient: {
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
 
 });

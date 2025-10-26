@@ -271,26 +271,6 @@ export default function Settings() {
             </View>
           </View>
         </View>
-
-        {/* Sign out */}
-        <View style={styles.footerActions}>
-          <TouchableOpacity
-            onPress={async () => {
-              try {
-                await AsyncStorage.removeItem('token');
-                await AsyncStorage.removeItem('user');
-              } catch {}
-              clickSoundContext?.playClick?.(),
-              router.push('/User');
-            }}
-            style={styles.logoutBtn}
-          >
-            <LinearGradient colors={['#FF6B6B', '#FF8E8E']} style={styles.logoutGradient}>
-              <Feather name="log-out" size={18} color="#FFF" />
-              <Text style={styles.logoutText}>Sign Out</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );

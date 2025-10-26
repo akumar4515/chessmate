@@ -303,6 +303,7 @@ export const checkAuthStatus = createAsyncThunk(
   }
 );
 
+
 // User slice
 const userSlice = createSlice({
   name: 'user',

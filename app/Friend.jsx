@@ -198,8 +198,10 @@ export default function FriendsPageRedesigned() {
     React.useCallback(() => {
       console.log('🔄 Friend page focused, checking socket connection...');
       
-      // Only refresh if we already have user data (not on initial load)
-      if (friendsDataCache.user && user) {
+      // Always refresh friends data when page comes into focus (including back handler navigation)
+      // This ensures fresh data when user navigates back to the page
+      if (user && !user.guest) {
+        console.log('🔄 User is logged in, refreshing friends data...');
         refreshFriendsData(false);
       }
       
@@ -413,15 +415,19 @@ export default function FriendsPageRedesigned() {
       setUser(parsed);
       userIdRef.current = parsed.id;
 
-      // Fetch all friends data
+      // Always fetch fresh friends data when refreshing (including back handler navigation)
+      console.log('🔄 Fetching fresh friends data...');
       await Promise.all([
         fetchFriends(token),
         fetchPendingRequests(token),
         fetchSentRequests(token),
       ]);
 
-      // Initialize socket
-      await initializeSocket(token);
+      // Initialize socket if not connected
+      if (!socketRef.current?.connected) {
+        console.log('🔄 Initializing socket connection...');
+        await initializeSocket(token);
+      }
       
     } catch (e) {
       console.error('Background refresh error:', e);

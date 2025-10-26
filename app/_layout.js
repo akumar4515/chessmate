@@ -12,6 +12,7 @@ import { ExitConfirmProvider } from '../src/components/ExitConfirmProvider';
 import { useAndroidConfirmExitOnHome } from '../src/hooks/useAndroidConfirmAndExit';
 import { initClickSound, unloadClickSound } from '../src/utils/ClickSound';
 import ReduxProvider from '../src/components/ReduxProvider';
+import { AuthLoadingProvider, useAuthLoading } from '../src/contexts/AuthLoadingContext';
 
 import MusicProvider from './music.js';
 import ClickSoundProvider from './clickSound.js';
@@ -46,13 +47,15 @@ export default function Layout() {
 
   return (
     <ReduxProvider>
-      <MusicProvider>
-        <ClickSoundProvider>
-          <ExitConfirmProvider>
-            <InnerLayout />
-          </ExitConfirmProvider>
-        </ClickSoundProvider>
-      </MusicProvider>
+      <AuthLoadingProvider>
+        <MusicProvider>
+          <ClickSoundProvider>
+            <ExitConfirmProvider>
+              <InnerLayout />
+            </ExitConfirmProvider>
+          </ClickSoundProvider>
+        </MusicProvider>
+      </AuthLoadingProvider>
     </ReduxProvider>
   );
 }
@@ -63,10 +66,55 @@ function InnerLayout() {
   const [showSplash, setShowSplash] = useState(true);
   const [isFirstLaunch, setIsFirstLaunch] = useState(true);
   const [isAppInitialized, setIsAppInitialized] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const { isAuthLoading: isAuthLoadingFromContext } = useAuthLoading();
   const insets = useSafeAreaInsets();
 
   // Back handler hook runs inside provider
   useAndroidConfirmExitOnHome();
+
+  // Check authentication status
+  useEffect(() => {
+    const checkAuthStatus = async () => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        const userData = await AsyncStorage.getItem('user');
+        
+        if (token && userData) {
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+        }
+      } catch (error) {
+        console.warn('Error checking auth status:', error);
+        setIsAuthenticated(false);
+      } finally {
+        setIsAuthLoading(false);
+      }
+    };
+
+    checkAuthStatus();
+  }, []);
+
+  // Listen for authentication state changes when navigating to/from User page
+  useEffect(() => {
+    const checkAuthOnNavigation = async () => {
+      if (pathname === '/User') {
+        // When on User page, check auth status
+        try {
+          const token = await AsyncStorage.getItem('token');
+          const userData = await AsyncStorage.getItem('user');
+          setIsAuthenticated(!!(token && userData));
+        } catch (error) {
+          console.warn('Error checking auth on navigation:', error);
+          setIsAuthenticated(false);
+        }
+      }
+    };
+
+    checkAuthOnNavigation();
+  }, [pathname]);
 
   // Configure full screen mode on app start
   useEffect(() => {
@@ -109,54 +157,62 @@ function InnerLayout() {
 
   // Show splash screen only on true app startup
   useEffect(() => {
+    let timerId = null;
+    let isMounted = true;
+  
     const initializeApp = async () => {
       try {
-        // Check if this is a fresh app start by looking for app session
         const appSession = await AsyncStorage.getItem('appSession');
-        const currentTime = Date.now();
-        
+        const currentTime = Date.now().toString();
+  
         if (!appSession) {
-          // This is a fresh app start - show splash screen
-          console.log('Fresh app start detected - showing splash screen');
+          // Fresh start -> show splash and store session
+          if (!isMounted) return;
           setShowSplash(true);
           setIsFirstLaunch(true);
-          setIsAppInitialized(true);
-          
-          // Store app session to prevent splash on resume
-          await AsyncStorage.setItem('appSession', currentTime.toString());
-          
-          // Show splash screen for 5.5 seconds
-          const timer = setTimeout(async () => { 
-            console.log('Splash screen timeout - hiding splash');
-            setShowSplash(false); 
+  
+          await AsyncStorage.setItem('appSession', currentTime);
+  
+          // Keep reference to timer so we can clear it in cleanup
+          timerId = setTimeout(() => {
+            if (!isMounted) return;
+            setShowSplash(false);
             setIsFirstLaunch(false);
+            // mark initialization finished after splash hides
+            setIsAppInitialized(true);
           }, 5500);
-
-          return () => clearTimeout(timer);
         } else {
-          // App is resuming - don't show splash screen
-          console.log('App resuming - skipping splash screen');
+          // Resuming -> skip splash
+          if (!isMounted) return;
           setShowSplash(false);
           setIsFirstLaunch(false);
           setIsAppInitialized(true);
         }
       } catch (error) {
         console.warn('Error initializing app:', error);
-        // On error, show splash screen as fallback
+        if (!isMounted) return;
+  
+        // Fallback: show splash for same duration
         setShowSplash(true);
         setIsFirstLaunch(true);
-        setIsAppInitialized(true);
-        
-        const timer = setTimeout(() => { 
-          setShowSplash(false); 
-          setIsFirstLaunch(false); 
+        timerId = setTimeout(() => {
+          if (!isMounted) return;
+          setShowSplash(false);
+          setIsFirstLaunch(false);
+          setIsAppInitialized(true);
         }, 5500);
-        return () => clearTimeout(timer);
       }
     };
-
+  
     initializeApp();
+  
+    // effect cleanup: clear timeout and mark unmounted
+    return () => {
+      isMounted = false;
+      if (timerId) clearTimeout(timerId);
+    };
   }, []);
+  
 
   // Handle app state changes - clear session when app is backgrounded for long time
   useEffect(() => {
@@ -200,7 +256,11 @@ function InnerLayout() {
 
   if (showSplash || isFirstLaunch || !isAppInitialized) return <SplashScreen key="splash-screen" />;
 
+  // Check if navigation should be disabled during authentication flows
+  const isAuthPage = pathname === '/User';
   const shouldShowBottomNav = !['/chess', '/chessAi', '/chessMulti', '/introVideo'].includes(pathname);
+  // Disable navigation when authentication is in progress (login/signup button pressed)
+  const shouldDisableNav = isAuthLoadingFromContext;
   const contentBottomPadding = shouldShowBottomNav ? BOTTOM_NAV_HEIGHT : 0;
 
   return (
@@ -222,7 +282,7 @@ function InnerLayout() {
           }}
         />
       </View>
-      {shouldShowBottomNav && <BottomNav />}
+      {shouldShowBottomNav && <BottomNav disabled={shouldDisableNav} />}
       
     </View>
   );
