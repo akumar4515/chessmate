@@ -155,7 +155,7 @@ function InnerLayout() {
   }, []);
 
 
-  // Show splash screen only on true app startup
+  // Show splash screen on app startup based on session
   useEffect(() => {
     let timerId = null;
     let isMounted = true;
@@ -166,23 +166,21 @@ function InnerLayout() {
         const currentTime = Date.now().toString();
   
         if (!appSession) {
-          // Fresh start -> show splash and store session
+          // No session -> show splash
           if (!isMounted) return;
           setShowSplash(true);
           setIsFirstLaunch(true);
   
           await AsyncStorage.setItem('appSession', currentTime);
   
-          // Keep reference to timer so we can clear it in cleanup
           timerId = setTimeout(() => {
             if (!isMounted) return;
             setShowSplash(false);
             setIsFirstLaunch(false);
-            // mark initialization finished after splash hides
             setIsAppInitialized(true);
           }, 5500);
         } else {
-          // Resuming -> skip splash
+          // Session exists -> skip splash
           if (!isMounted) return;
           setShowSplash(false);
           setIsFirstLaunch(false);
@@ -192,7 +190,7 @@ function InnerLayout() {
         console.warn('Error initializing app:', error);
         if (!isMounted) return;
   
-        // Fallback: show splash for same duration
+        // Fallback: show splash
         setShowSplash(true);
         setIsFirstLaunch(true);
         timerId = setTimeout(() => {
@@ -206,37 +204,37 @@ function InnerLayout() {
   
     initializeApp();
   
-    // effect cleanup: clear timeout and mark unmounted
     return () => {
       isMounted = false;
       if (timerId) clearTimeout(timerId);
     };
   }, []);
   
-
-  // Handle app state changes - clear session when app is backgrounded for long time
+  // Handle app background/minimize state - clear session after 30 seconds
   useEffect(() => {
+    let backgroundTimer = null;
+    
     const handleAppStateChange = async (nextAppState) => {
       if (nextAppState === 'background' || nextAppState === 'inactive') {
-        // Store the time when app goes to background
-        try {
-          await AsyncStorage.setItem('appBackgroundTime', Date.now().toString());
-        } catch (error) {
-          console.warn('Error storing background time:', error);
-        }
-      } else if (nextAppState === 'active') {
-        // Check if app was backgrounded for more than 30 seconds (likely closed)
-        try {
-          const lastBackgroundTime = await AsyncStorage.getItem('appBackgroundTime');
-          if (lastBackgroundTime) {
-            const timeDiff = Date.now() - parseInt(lastBackgroundTime);
-            if (timeDiff > 30000) { // 30 seconds
-              console.log('App was backgrounded for long time - clearing session for next fresh start');
-              await AsyncStorage.removeItem('appSession');
-            }
+        // App is going to background - set timer to clear session after 30 seconds
+        console.log('App going to background - will clear session in 30 seconds if not resumed');
+        
+        backgroundTimer = setTimeout(async () => {
+          try {
+            console.log('App was in background for 30+ seconds - clearing session');
+            await AsyncStorage.removeItem('appSession');
+            await AsyncStorage.removeItem('appBackgroundTime');
+          } catch (error) {
+            console.warn('Error clearing session after 30s:', error);
           }
-        } catch (error) {
-          console.warn('Error checking background time:', error);
+        }, 30000); // 30 seconds
+        
+      } else if (nextAppState === 'active') {
+        // App is coming back to foreground - cancel the timer if it exists
+        if (backgroundTimer) {
+          console.log('App resumed before 30s - keeping session');
+          clearTimeout(backgroundTimer);
+          backgroundTimer = null;
         }
       }
     };
@@ -244,6 +242,7 @@ function InnerLayout() {
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     
     return () => {
+      if (backgroundTimer) clearTimeout(backgroundTimer);
       subscription?.remove();
     };
   }, []);

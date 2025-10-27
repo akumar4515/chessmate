@@ -1,6 +1,7 @@
 // src/components/ExitConfirmProvider.js
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { BackHandler } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import ExitConfirmDialog from '../../src/components/ExitConfirmDialog';
 
 const ExitConfirmCtx = createContext(null);
@@ -15,7 +16,8 @@ export function ExitConfirmProvider({ children }) {
       console.log('User confirmed app exit - clearing session data...');
       
       // Clear all session data before exiting
-      await SessionManager.clearAllSessionData();
+      await AsyncStorage.removeItem('appSession');
+      await AsyncStorage.removeItem('appBackgroundTime');
       
       setVisible(false);
       BackHandler.exitApp();
